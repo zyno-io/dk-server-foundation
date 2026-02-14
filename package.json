@@ -31,7 +31,9 @@
         "gen:proto": "ts-node src/cli/dksf-gen-proto.ts resources/proto/test.proto resources/proto/generated/test && ts-node src/cli/dksf-gen-proto.ts resources/proto/devconsole.proto resources/proto/generated/devconsole",
         "docs:dev": "vitepress dev docs",
         "docs:build": "vitepress build docs",
-        "docs:preview": "vitepress preview docs"
+        "docs:preview": "vitepress preview docs",
+        "docs:screenshots": "node scripts/capture-devconsole-screenshots.js",
+        "docs:screenshots:headless": "node scripts/capture-devconsole-screenshots.js --headless"
     },
     "author": "Sean Ferguson <support@sgnl24.com>",
     "license": "MIT",

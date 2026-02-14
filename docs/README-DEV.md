@@ -82,6 +82,47 @@ Place images in `docs/public/images/` and reference them with `/images/...` in M
 ![Alt text](/images/example.png)
 ```
 
+## Capturing DevConsole Screenshots
+
+To update the DevConsole screenshots used in the documentation:
+
+### Prerequisites
+
+1. Install Playwright:
+   ```bash
+   npm install -D @playwright/test
+   npx playwright install chromium
+   ```
+
+2. Ensure MySQL and Redis are running
+
+### Capture Screenshots
+
+1. In one terminal, start the demo app:
+   ```bash
+   yarn demoapp
+   ```
+
+2. Wait for the server to start (you'll see "Server started" message)
+
+3. In another terminal, run the screenshot capture script:
+   ```bash
+   yarn docs:screenshots
+   ```
+
+This will automatically:
+- Navigate through all 13 DevConsole views
+- Wait for each page to load completely
+- Capture full-page screenshots
+- Save them to `docs/public/images/devconsole/`
+
+For headless mode (faster, no visible browser):
+```bash
+yarn docs:screenshots:headless
+```
+
+See `scripts/README-SCREENSHOTS.md` for detailed instructions and troubleshooting.
+
 ## Deployment
 
 The documentation is automatically deployed to GitHub Pages when changes are pushed to the `main` branch. The workflow is defined in `.github/workflows/deploy-docs.yml`.
