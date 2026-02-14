@@ -25,15 +25,13 @@ import { HealthcheckService } from '@signal24/dk-server-foundation';
 
 class MyService {
     constructor(private hcSvc: HealthcheckService) {
-        hcSvc.register(async () => {
+        hcSvc.register('Database', async () => {
             // Throw to indicate unhealthy
             await db.rawQuery(sql`SELECT 1`);
-        }, 'Database');
+        });
     }
 }
 ```
-
-The optional second argument to `register()` is a display name for the check. If omitted, checks are named `Check #1`, `Check #2`, etc.
 
 ### Database Health Check
 
@@ -43,7 +41,7 @@ When a database class is passed to `createApp()`, a database health check is aut
 
 | Method                                       | Description                                                                                         |
 | -------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| `register(fn: () => Promise<void>, name?)`   | Register a health check function. Throw to indicate failure. Optional `name` for display purposes.  |
+| `register(name, fn: () => Promise<void>)`    | Register a named health check function. Throw to indicate failure.                                  |
 | `check()`                                    | Run all registered health checks. Throws on first failure.                                          |
 | `checkIndividual()`                          | Run all checks and return per-check results: `{ name, status: 'ok' \| 'error', error? }[]`.        |
 

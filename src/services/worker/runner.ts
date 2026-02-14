@@ -102,7 +102,7 @@ export class WorkerRunnerService {
         });
         this.logger.info('Worker started');
 
-        this.hcSvc.register(async () => {
+        this.hcSvc.register('Worker Runner', async () => {
             if (!this.isRedisReady()) {
                 throw new Error('Worker Redis connection is not ready');
             }
