@@ -64,7 +64,7 @@ export class MigrationRunCommand {
                 this.logger.info('Removing repeatable job', { job: { name: job.name, key: job.key } });
                 await queue.removeRepeatableByKey(job.key);
             }
-            await queue.close();
+            await WorkerQueueRegistry.closeQueues();
         }
     }
 

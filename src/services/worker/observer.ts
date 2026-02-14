@@ -90,7 +90,7 @@ export class WorkerObserverService {
             await queue.remove(job.id!);
         }
 
-        this.hcSvc.register(async () => {
+        this.hcSvc.register('Worker Observer', async () => {
             if (!this.isRedisReady()) {
                 throw new Error('Observer Redis connection is not ready');
             }

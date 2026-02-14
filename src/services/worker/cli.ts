@@ -58,6 +58,6 @@ export class WorkerQueueJobCommand {
         data = data ? JSON.parse(data) : {};
         const queue = WorkerQueueRegistry.getQueue(BaseJob.QUEUE_NAME);
         await queue.add(jobName, data);
-        await queue.close();
+        await WorkerQueueRegistry.closeQueues();
     }
 }

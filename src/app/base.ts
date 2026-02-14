@@ -134,7 +134,7 @@ export function createApp<T extends CreateAppOptions<any>>(options: T) {
             @eventDispatcher.listen(onServerBootstrapDone)
             onServerBootstrapDone() {
                 const db = app.get(options.db);
-                this.hcSvc.register(async () => {
+                this.hcSvc.register('Database', async () => {
                     await db.rawFind('SELECT 1');
                 });
             }

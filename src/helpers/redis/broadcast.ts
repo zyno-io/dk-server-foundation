@@ -69,17 +69,19 @@ export function createBroadcastChannel<T>(eventName: string, _type?: ReceiveType
     };
 }
 
-interface IDistributedMethodParent {
-    logger: LoggerInterface;
+interface IDistributedMethodOptions {
+    name: string;
+    logger?: () => LoggerInterface;
 }
-export function createDistributedMethod<T>(parent: IDistributedMethodParent, name: string, fn: (data: T) => Promise<void>, type?: ReceiveType<T>) {
-    const channel = createBroadcastChannel(name, type);
+export function createDistributedMethod<T>(options: IDistributedMethodOptions, fn: (data: T) => Promise<void>, type?: ReceiveType<T>) {
+    const getLogger = options.logger ?? (() => r(Logger).scoped(`Distributed:${options.name}`));
+    const channel = createBroadcastChannel(options.name, type);
 
     const wrappedFn = async (data: T) => {
         try {
             await fn(data);
         } catch (err) {
-            parent.logger.error(`Error executing ${name} distributed method`, err);
+            getLogger().error(`Error executing ${options.name} distributed method`, err);
         }
     };
 

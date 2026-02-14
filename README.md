@@ -2,6 +2,8 @@
 
 A TypeScript foundation library built on top of the [Deepkit framework](https://deepkit.io) for building server applications. Provides opinionated abstractions and utilities for database management, HTTP handling, authentication, background jobs, RPC, distributed systems, and observability.
 
+📚 **[Documentation Site](https://signal24.github.io/dk-server-foundation/)** | 🚀 **[Getting Started](./docs/getting-started.md)**
+
 ## Install
 
 ```bash

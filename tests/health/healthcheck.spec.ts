@@ -7,8 +7,8 @@ describe('HealthcheckService', () => {
     describe('checkIndividual', () => {
         it('returns ok for passing checks', async () => {
             const svc = new HealthcheckService();
-            svc.register(() => Promise.resolve(), 'db');
-            svc.register(() => Promise.resolve(), 'redis');
+            svc.register('db', () => Promise.resolve());
+            svc.register('redis', () => Promise.resolve());
             const results = await svc.checkIndividual();
             assert.deepStrictEqual(results, [
                 { name: 'db', status: 'ok' },
@@ -18,10 +18,10 @@ describe('HealthcheckService', () => {
 
         it('returns error status for failing checks', async () => {
             const svc = new HealthcheckService();
-            svc.register(() => Promise.resolve(), 'db');
-            svc.register(() => {
+            svc.register('db', () => Promise.resolve());
+            svc.register('redis', () => {
                 throw new Error('connection refused');
-            }, 'redis');
+            });
             const results = await svc.checkIndividual();
             assert.strictEqual(results[0].status, 'ok');
             assert.strictEqual(results[1].status, 'error');
@@ -30,21 +30,12 @@ describe('HealthcheckService', () => {
 
         it('handles non-Error throws', async () => {
             const svc = new HealthcheckService();
-            svc.register(() => {
+            svc.register('broken', () => {
                 throw 'string error';
-            }, 'broken');
+            });
             const results = await svc.checkIndividual();
             assert.strictEqual(results[0].status, 'error');
             assert.strictEqual(results[0].error, 'string error');
-        });
-
-        it('uses default names when not provided', async () => {
-            const svc = new HealthcheckService();
-            svc.register(() => Promise.resolve());
-            svc.register(() => Promise.resolve());
-            const results = await svc.checkIndividual();
-            assert.strictEqual(results[0].name, 'Check #1');
-            assert.strictEqual(results[1].name, 'Check #2');
         });
 
         it('returns empty array when no checks registered', async () => {
@@ -55,7 +46,7 @@ describe('HealthcheckService', () => {
 
         it('handles async rejection', async () => {
             const svc = new HealthcheckService();
-            svc.register(() => Promise.reject(new Error('timeout')), 'slow-check');
+            svc.register('slow-check', () => Promise.reject(new Error('timeout')));
             const results = await svc.checkIndividual();
             assert.strictEqual(results[0].status, 'error');
             assert.strictEqual(results[0].error, 'timeout');

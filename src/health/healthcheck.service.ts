@@ -3,8 +3,8 @@ type HealthcheckFn = () => Promise<void>;
 export class HealthcheckService {
     private checks: { name: string; fn: HealthcheckFn }[] = [];
 
-    public register(fn: HealthcheckFn, name?: string) {
-        this.checks.push({ name: name ?? `Check #${this.checks.length + 1}`, fn });
+    public register(name: string, fn: HealthcheckFn) {
+        this.checks.push({ name, fn });
     }
 
     public async check() {

@@ -30,5 +30,6 @@ export class WorkerQueueRegistry {
         for (const queue of this.registry.values()) {
             await queue.close();
         }
+        this.registry.clear();
     }
 }

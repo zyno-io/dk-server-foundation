@@ -4,6 +4,38 @@ A built-in web dashboard for development-time monitoring and debugging. Automati
 
 DevConsole is zero-config, localhost-only, and requires no additional setup beyond running your app in development mode.
 
+## Screenshots
+
+### Dashboard
+![DevConsole Dashboard](/images/devconsole/01-dashboard.png)
+
+### Routes
+![DevConsole Routes](/images/devconsole/02-routes.png)
+
+### OpenAPI Schema
+![DevConsole OpenAPI](/images/devconsole/03-openapi.png)
+
+### HTTP Requests
+![DevConsole Requests](/images/devconsole/04-requests.png)
+
+### SRPC
+![DevConsole SRPC](/images/devconsole/05-srpc.png)
+
+### Database
+![DevConsole Database](/images/devconsole/06-database.png)
+
+### Health Checks
+![DevConsole Health](/images/devconsole/07-health.png)
+
+### Mutex Monitor
+![DevConsole Mutex](/images/devconsole/08-mutex.png)
+
+### Interactive REPL
+![DevConsole REPL](/images/devconsole/09-repl.png)
+
+### Workers
+![DevConsole Workers](/images/devconsole/10-workers.png)
+
 ## Views
 
 ### Dashboard

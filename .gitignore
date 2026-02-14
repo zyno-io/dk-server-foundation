@@ -10,3 +10,7 @@ openapi.yaml
 _scratch
 resources/proto/generated
 dist
+docs/.vitepress/dist
+docs/.vitepress/cache
+docs/.yarn
+docs-old
