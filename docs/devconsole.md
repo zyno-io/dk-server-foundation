@@ -12,32 +12,38 @@ DevConsole is zero-config, localhost-only, and requires no additional setup beyo
 ### Routes
 ![DevConsole Routes](/images/devconsole/02-routes.png)
 
+### OpenAPI Schema
+![DevConsole OpenAPI](/images/devconsole/03-openapi.png)
+
 ### HTTP Requests
-![DevConsole Requests](/images/devconsole/03-requests.png)
+![DevConsole Requests](/images/devconsole/04-requests.png)
 
 ### Request Detail
-![DevConsole Request Detail](/images/devconsole/07-requests-detail.png)
+![DevConsole Request Detail](/images/devconsole/05-requests-detail.png)
 
-### Database Browser
-![DevConsole Database](/images/devconsole/04-database.png)
+### SRPC Connections
+![DevConsole SRPC](/images/devconsole/06-srpc.png)
+
+### SRPC Connection Detail
+![DevConsole SRPC Detail](/images/devconsole/07-srpc-detail.png)
+
+### Database
+![DevConsole Database](/images/devconsole/08-database.png)
 
 ### Database Query Results
-![DevConsole Database Detail](/images/devconsole/08-database-detail.png)
+![DevConsole Database Detail](/images/devconsole/09-database-detail.png)
 
-### SRPC Connection Monitor
-![DevConsole SRPC Detail](/images/devconsole/06-srpc-detail.png)
+### Health Checks
+![DevConsole Health](/images/devconsole/10-health.png)
 
-### Workers
-![DevConsole Workers](/images/devconsole/05-workers.png)
-
-### OpenAPI Schema
-![DevConsole OpenAPI](/images/devconsole/09-openapi.png)
+### Mutex Monitor
+![DevConsole Mutex](/images/devconsole/11-mutex.png)
 
 ### Interactive REPL
-![DevConsole REPL](/images/devconsole/10-repl.png)
+![DevConsole REPL](/images/devconsole/12-repl.png)
 
-### Redis Mutex Monitor
-![DevConsole Mutex](/images/devconsole/11-mutex.png)
+### Workers
+![DevConsole Workers](/images/devconsole/13-workers.png)
 
 ## Views
 
