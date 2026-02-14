@@ -1,0 +1,62 @@
+diff --git a/node_modules/deepkit-openapi-core/dist/cjs/src/OpenAPIDocument.js b/node_modules/deepkit-openapi-core/dist/cjs/src/OpenAPIDocument.js
+index 9b44c68..00f1483 100644
+--- a/node_modules/deepkit-openapi-core/dist/cjs/src/OpenAPIDocument.js
++++ b/node_modules/deepkit-openapi-core/dist/cjs/src/OpenAPIDocument.js
+@@ -27,7 +27,7 @@ const camelcase_1 = __importDefault(require("camelcase"));
+ const errors_1 = require("./errors");
+ const ParametersResolver_1 = require("./ParametersResolver");
+ const SchemaRegistry_1 = require("./SchemaRegistry");
+-const lodash_clonedeepwith_1 = __importDefault(require("lodash.clonedeepwith"));
++const lodash_1 = require("lodash");
+ const utils_1 = require("./utils");
+ const TypeSchemaResolver_1 = require("./TypeSchemaResolver");
+ const type_1 = require("@deepkit/type");
+@@ -100,7 +100,7 @@ class OpenAPIDocument {
+         return openapi;
+     }
+     serializeDocument() {
+-        return (0, lodash_clonedeepwith_1.default)(this.getDocument(), __assignType((c) => {
++        return (0, lodash_1.cloneDeepWith)(this.getDocument(), __assignType((c) => {
+             if (c && typeof c === "object") {
+                 if (c.__type === "schema" && c.__registryKey && !c.__isComponent) {
+                     const ret = {
+diff --git a/node_modules/deepkit-openapi-core/dist/cjs/src/SchemaRegistry.js b/node_modules/deepkit-openapi-core/dist/cjs/src/SchemaRegistry.js
+index 6a46ed3..15f1e9a 100644
+--- a/node_modules/deepkit-openapi-core/dist/cjs/src/SchemaRegistry.js
++++ b/node_modules/deepkit-openapi-core/dist/cjs/src/SchemaRegistry.js
+@@ -20,6 +20,7 @@ function __assignType(fn, args) {
+ }
+ const type_1 = require("@deepkit/type");
+ const camelcase_1 = __importDefault(require("camelcase"));
++const lodash_1 = require("lodash");
+ const errors_1 = require("./errors");
+ const __ΩSchemeEntry = ['name', () => __ΩSchema, 'schema', 'Type', 'type', 'SchemeEntry', 'P&4!n"4#"w$4%Mw&y'];
+ exports.__ΩSchemeEntry = __ΩSchemeEntry;
+@@ -88,7 +89,14 @@ class SchemaRegistry {
+     registerSchema(name, type, schema) {
+         const currentEntry = this.store.get(name);
+         if (currentEntry && !(0, type_1.isSameType)(type, currentEntry === null || currentEntry === void 0 ? void 0 : currentEntry.type)) {
+-            throw new errors_1.DeepKitOpenApiSchemaNameConflict(type, currentEntry.type, name);
++            // Types may differ in metadata (e.g. parent route context) while producing
++            // identical schemas, such as HttpBody<T> used across multiple routes.
++            // Only throw if the generated schemas actually differ.
++            const normalizedNew = { ...schema, nullable: undefined, __registryKey: undefined };
++            const normalizedExisting = { ...currentEntry.schema, __registryKey: undefined };
++            if (!(0, lodash_1.isEqual)(normalizedNew, normalizedExisting)) {
++                throw new errors_1.DeepKitOpenApiSchemaNameConflict(type, currentEntry.type, name);
++            }
+         }
+         this.store.set(name, {
+             type,
+diff --git a/node_modules/deepkit-openapi-core/dist/cjs/src/TypeSchemaResolver.d.ts b/node_modules/deepkit-openapi-core/dist/cjs/src/TypeSchemaResolver.d.ts
+index f6324ac..53ac6fd 100644
+--- a/node_modules/deepkit-openapi-core/dist/cjs/src/TypeSchemaResolver.d.ts
++++ b/node_modules/deepkit-openapi-core/dist/cjs/src/TypeSchemaResolver.d.ts
+@@ -15,6 +15,6 @@ export declare class TypeSchemaResolver {
+     resolveValidators(): void;
+     resolve(): this;
+ }
+-export declare const mapSimpleLiteralToType: (literal: any) => "number" | "string" | "boolean" | "integer" | undefined;
++export declare const mapSimpleLiteralToType: (literal: any) => "string" | "number" | "boolean" | "integer" | undefined;
+ export declare const unwrapTypeSchema: (t: Type, r?: SchemaRegistry) => Schema;
+ export declare const resolveTypeSchema: (t: Type, r?: SchemaRegistry) => TypeSchemaResolver;
