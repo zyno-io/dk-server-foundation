@@ -99,32 +99,23 @@ The built-in DevConsole provides a comprehensive development dashboard:
 ### HTTP Requests
 ![DevConsole Requests](/images/devconsole/04-requests.png)
 
-### Request Detail
-![DevConsole Request Detail](/images/devconsole/05-requests-detail.png)
-
-### SRPC Connections
-![DevConsole SRPC](/images/devconsole/06-srpc.png)
-
-### SRPC Connection Detail
-![DevConsole SRPC Detail](/images/devconsole/07-srpc-detail.png)
+### SRPC
+![DevConsole SRPC](/images/devconsole/05-srpc.png)
 
 ### Database
-![DevConsole Database](/images/devconsole/08-database.png)
-
-### Database Query Results
-![DevConsole Database Detail](/images/devconsole/09-database-detail.png)
+![DevConsole Database](/images/devconsole/06-database.png)
 
 ### Health Checks
-![DevConsole Health](/images/devconsole/10-health.png)
+![DevConsole Health](/images/devconsole/07-health.png)
 
 ### Mutex Monitor
-![DevConsole Mutex](/images/devconsole/11-mutex.png)
+![DevConsole Mutex](/images/devconsole/08-mutex.png)
 
 ### Interactive REPL
-![DevConsole REPL](/images/devconsole/12-repl.png)
+![DevConsole REPL](/images/devconsole/09-repl.png)
 
 ### Workers
-![DevConsole Workers](/images/devconsole/13-workers.png)
+![DevConsole Workers](/images/devconsole/10-workers.png)
 
 ## Features at a Glance
 

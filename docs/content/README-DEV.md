@@ -111,10 +111,10 @@ To update the DevConsole screenshots used in the documentation:
    ```
 
 This will automatically:
-- Navigate through all 13 DevConsole views
+- Navigate through all 10 DevConsole views
 - Wait for each page to load completely
 - Capture full-page screenshots
-- Save them to `docs/public/images/devconsole/`
+- Save them to `docs/content/public/images/devconsole/`
 
 For headless mode (faster, no visible browser):
 ```bash

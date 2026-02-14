@@ -4,14 +4,14 @@ This directory contains a script to capture DevConsole screenshots for documenta
 
 ## Prerequisites
 
-1. **Install Playwright** (if not already installed):
+1. **Install dependencies** (if not already done):
    ```bash
-   npm install -D @playwright/test
+   cd docs && yarn install
    ```
 
 2. **Install Playwright browsers**:
    ```bash
-   npx playwright install chromium
+   cd docs && npx playwright install chromium
    ```
 
 3. **Ensure services are running**:
@@ -39,30 +39,30 @@ Server started.
 In another terminal window, run:
 
 ```bash
-node scripts/capture-devconsole-screenshots.js
+yarn screenshots
 ```
 
 This will:
 - Open a Chromium browser (visible by default)
-- Navigate through all 13 DevConsole views in order
+- Navigate through all 10 DevConsole views in order
 - Wait for each page to load completely
 - Capture full-page screenshots
-- Save them to `docs/public/images/devconsole/`
+- Save them to `docs/content/public/images/devconsole/`
 
 ### Options
 
 ```bash
 # Run in headless mode (faster, no visible browser)
-node scripts/capture-devconsole-screenshots.js --headless
+yarn screenshots:headless
 
 # Use custom URL
-node scripts/capture-devconsole-screenshots.js --url http://localhost:3001/_devconsole
+yarn screenshots --url http://localhost:3001/_devconsole
 
 # Use custom output directory
-node scripts/capture-devconsole-screenshots.js --output ./screenshots
+yarn screenshots --output ./screenshots
 
 # Custom wait time between navigations (in milliseconds)
-node scripts/capture-devconsole-screenshots.js --wait 3000
+yarn screenshots --wait 3000
 ```
 
 ## Screenshots Captured
@@ -72,16 +72,13 @@ The script captures all DevConsole views in navigation order:
 1. **01-dashboard.png** - Dashboard with app metrics
 2. **02-routes.png** - HTTP Routes listing
 3. **03-openapi.png** - OpenAPI Schema viewer
-4. **04-requests.png** - HTTP Requests inspector
-5. **05-requests-detail.png** - Request detail drill-down (clicks first request)
-6. **06-srpc.png** - SRPC Connections table
-7. **07-srpc-detail.png** - SRPC connection detail drill-down (clicks first connection)
-8. **08-database.png** - Database entity browser
-9. **09-database-detail.png** - Database query results (clicks notes entity)
-10. **10-health.png** - Health checks status
-11. **11-mutex.png** - Mutex monitor
-12. **12-repl.png** - Interactive REPL
-13. **13-workers.png** - Workers/BullMQ monitor
+4. **04-requests.png** - HTTP Request detail drill-down
+5. **05-srpc.png** - SRPC message request/response detail
+6. **06-database.png** - Database query results
+7. **07-health.png** - Health checks status
+8. **08-mutex.png** - Mutex monitor
+9. **09-repl.png** - Interactive REPL
+10. **10-workers.png** - Workers/BullMQ monitor
 
 ## Troubleshooting
 
@@ -105,7 +102,7 @@ npx playwright install chromium
 
 Increase the wait time:
 ```bash
-node scripts/capture-devconsole-screenshots.js --wait 8000
+yarn screenshots --wait 8000
 ```
 
 ### MySQL or Redis connection errors
@@ -123,8 +120,8 @@ sudo service redis-server start
 
 After running the script, verify the screenshots:
 
-1. Open `docs/public/images/devconsole/` directory
-2. Check that all 13 PNG files exist
+1. Open `docs/content/public/images/devconsole/` directory
+2. Check that all 10 PNG files exist
 3. Open each image to verify:
    - Correct view is captured
    - Page is fully loaded

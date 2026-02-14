@@ -29,11 +29,11 @@
         "testapp": "yarn clean && tsc -p tsconfig.testapp.json && node dist/testapp/bootstrap server:start",
         "demoapp": "yarn build:devconsole && dksf-dev run -p tsconfig.demoapp.json dist/demoapp/bootstrap",
         "gen:proto": "ts-node src/cli/dksf-gen-proto.ts resources/proto/test.proto resources/proto/generated/test && ts-node src/cli/dksf-gen-proto.ts resources/proto/devconsole.proto resources/proto/generated/devconsole",
-        "docs:dev": "vitepress dev docs",
-        "docs:build": "vitepress build docs",
-        "docs:preview": "vitepress preview docs",
-        "docs:screenshots": "node scripts/capture-devconsole-screenshots.js",
-        "docs:screenshots:headless": "node scripts/capture-devconsole-screenshots.js --headless"
+        "docs:dev": "cd docs && yarn dev",
+        "docs:build": "cd docs && yarn build",
+        "docs:preview": "cd docs && yarn preview",
+        "docs:screenshots": "cd docs && yarn screenshots",
+        "docs:screenshots:headless": "cd docs && yarn screenshots:headless"
     },
     "author": "Sean Ferguson <support@sgnl24.com>",
     "license": "MIT",
@@ -121,9 +121,7 @@
         "ts-node": "^10.9.2",
         "tslib": "^2.8.1",
         "type-fest": "^5.4.4",
-        "typescript": "~5.9",
-        "vitepress": "^1.6.4",
-        "vue": "^3.5.28"
+        "typescript": "~5.9"
     },
     "files": [
         "dist/src/",

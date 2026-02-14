@@ -2,6 +2,7 @@ import { defineConfig } from 'vitepress'
 
 // https://vitepress.dev/reference/site-config
 export default defineConfig({
+  srcDir: 'content',
   title: "@signal24/dk-server-foundation",
   description: "TypeScript foundation library built on Deepkit for building server applications",
   base: '/dk-server-foundation/',
@@ -46,6 +47,7 @@ export default defineConfig({
       {
         text: 'Utilities',
         items: [
+          { text: 'Redis', link: '/redis' },
           { text: 'Helpers', link: '/helpers' },
           { text: 'Telemetry', link: '/telemetry' },
           { text: 'Testing', link: '/testing' },
