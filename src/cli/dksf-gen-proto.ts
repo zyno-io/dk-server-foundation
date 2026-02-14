@@ -26,7 +26,7 @@ Options:
 Examples:
   dksf-gen-proto ./proto/service.proto ./src/generated
   dksf-gen-proto ./proto ./src/generated/proto
-  dksf-gen-proto ./resources/proto/my-service.proto ./src/types --with-encode
+  dksf-gen-proto ./resources/proto/my-service.proto ./src/types
 `);
 }
 

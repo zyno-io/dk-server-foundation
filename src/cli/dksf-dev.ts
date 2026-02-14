@@ -114,6 +114,22 @@ function releaseBuildLock(): void {
 
 // --- Core operations ---
 
+function extractTsconfigArg(args: string[]): string | undefined {
+    for (let i = 0; i < args.length; i++) {
+        if (args[i] === '-p' || args[i] === '--tsconfig') {
+            const val = args[i + 1];
+            args.splice(i, 2);
+            return val;
+        }
+        if (args[i].startsWith('-p=') || args[i].startsWith('--tsconfig=')) {
+            const val = args[i].split('=', 2)[1];
+            args.splice(i, 1);
+            return val;
+        }
+    }
+    return undefined;
+}
+
 function clean(): void {
     rmSync(join(projectDir, 'dist'), { recursive: true, force: true });
 }
@@ -126,8 +142,8 @@ function tsc(tsconfig: string): void {
     if (result.status !== 0) process.exit(result.status ?? 1);
 }
 
-function startTscWatchWithReadySignal(): { child: ChildProcess; ready: Promise<void> } {
-    const child = spawn(process.execPath, [tscPath, '-w', '--preserveWatchOutput', '-p', 'tsconfig.json'], {
+function startTscWatchWithReadySignal(tsconfig: string): { child: ChildProcess; ready: Promise<void> } {
+    const child = spawn(process.execPath, [tscPath, '-w', '--preserveWatchOutput', '-p', tsconfig], {
         stdio: ['inherit', 'pipe', 'inherit'],
         cwd: projectDir
     });
@@ -149,10 +165,10 @@ function startTscWatchWithReadySignal(): { child: ChildProcess; ready: Promise<v
     return { child, ready };
 }
 
-async function performLockedWatchBuild(): Promise<ChildProcess> {
+async function performLockedWatchBuild(tsconfig: string): Promise<ChildProcess> {
     console.log('Starting dev build...');
     clean();
-    const { child, ready } = startTscWatchWithReadySignal();
+    const { child, ready } = startTscWatchWithReadySignal(tsconfig);
     await ready;
     console.log('Dev build ready.');
     writeDevState({ ready: true, pids: [] });
@@ -161,14 +177,14 @@ async function performLockedWatchBuild(): Promise<ChildProcess> {
 }
 
 // Returns tsc watch child process if this process is the builder, null otherwise
-async function ensureDevBuild(): Promise<ChildProcess | null> {
+async function ensureDevBuild(tsconfig: string): Promise<ChildProcess | null> {
     if (isDevRunning()) {
         console.log('Using existing dev build from another process.');
         return null;
     }
 
     if (tryAcquireBuildLock()) {
-        return performLockedWatchBuild();
+        return performLockedWatchBuild(tsconfig);
     }
 
     // Wait for another builder to finish
@@ -183,13 +199,13 @@ async function ensureDevBuild(): Promise<ChildProcess | null> {
             const pid = parseInt(readFileSync(devLockFile, 'utf-8'));
             if (!isPidAlive(pid)) {
                 if (tryAcquireBuildLock()) {
-                    return performLockedWatchBuild();
+                    return performLockedWatchBuild(tsconfig);
                 }
             }
         } catch {
             if (readDevState()?.ready) return null;
             if (tryAcquireBuildLock()) {
-                return performLockedWatchBuild();
+                return performLockedWatchBuild(tsconfig);
             }
         }
     }
@@ -203,10 +219,11 @@ function cmdClean(): void {
 
 function cmdBuild(args: string[]): void {
     const watch = args.includes('--watch');
+    const tsconfig = extractTsconfigArg(args) ?? 'tsconfig.json';
     console.log('Building...');
     clean();
     if (watch) {
-        const child = spawn(process.execPath, [tscPath, '-w', '--preserveWatchOutput', '-p', 'tsconfig.json'], {
+        const child = spawn(process.execPath, [tscPath, '-w', '--preserveWatchOutput', '-p', tsconfig], {
             stdio: 'inherit',
             cwd: projectDir
         });
@@ -214,7 +231,7 @@ function cmdBuild(args: string[]): void {
         process.on('SIGTERM', () => child.kill('SIGTERM'));
         child.on('close', code => process.exit(code ?? 0));
     } else {
-        tsc('tsconfig.json');
+        tsc(tsconfig);
         console.log('Build complete.');
     }
 }
@@ -225,9 +242,10 @@ async function cmdRun(args: string[]): Promise<void> {
     const childArgs = ddIdx >= 0 ? args.slice(ddIdx + 1) : ['server:start'];
 
     const debug = ownArgs.includes('--debug');
+    const tsconfig = extractTsconfigArg(ownArgs) ?? 'tsconfig.json';
     const script = ownArgs.find(a => !a.startsWith('-')) ?? '.';
 
-    const tscChild = await ensureDevBuild();
+    const tscChild = await ensureDevBuild(tsconfig);
     registerDevPid();
     process.on('exit', unregisterDevPid);
 
@@ -256,11 +274,12 @@ async function cmdRun(args: string[]): Promise<void> {
 
 function cmdMigrate(args: string[]): void {
     const debug = args.includes('--debug');
+    const tsconfig = extractTsconfigArg(args) ?? 'tsconfig.json';
 
     if (!isDevRunning()) {
         console.log('Building...');
         clean();
-        tsc('tsconfig.json');
+        tsc(tsconfig);
         console.log('Build complete.');
     } else {
         console.log('Using existing dev build from another process.');
@@ -276,11 +295,12 @@ function cmdMigrate(args: string[]): void {
 
 function cmdRepl(args: string[]): void {
     const debug = args.includes('--debug');
+    const tsconfig = extractTsconfigArg(args) ?? 'tsconfig.json';
 
     if (!isDevRunning()) {
         console.log('Building...');
         clean();
-        tsc('tsconfig.json');
+        tsc(tsconfig);
         console.log('Build complete.');
     } else {
         console.log('Using existing dev build from another process.');
@@ -296,11 +316,12 @@ function cmdRepl(args: string[]): void {
 
 function cmdTest(args: string[]): void {
     const debug = args.includes('--debug');
+    const tsconfig = extractTsconfigArg(args) ?? 'tsconfig.test.json';
     const testArgs = args.filter(a => a !== '--debug');
 
     console.log('Building...');
     clean();
-    tsc('tsconfig.test.json');
+    tsc(tsconfig);
     console.log('Build complete.');
 
     const inspectFlag = debug ? '--inspect-brk=9268' : '--inspect=9268';
@@ -345,6 +366,9 @@ Commands:
   migrate [--debug]            Clean, build (if needed), and run migrations
   repl [--debug]               Clean, build (if needed), and start a REPL
   test [--debug] [args...]     Clean, build tests, and run dksf-test
+
+Common options:
+  -p, --tsconfig <file>  TypeScript config file (default: tsconfig.json)
 
 Run options:
   --debug      Use --inspect-brk instead of --inspect

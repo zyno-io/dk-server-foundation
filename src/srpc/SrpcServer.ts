@@ -30,6 +30,28 @@ import {
 import { uuid } from '@deepkit/type';
 
 const StreamInfoSymbol = Symbol('srpc-info');
+const UpgradeClaimedSymbol = Symbol('srpc-upgrade-claimed');
+const _fallbackInstalledServers = new WeakSet<import('http').Server>();
+
+/**
+ * Install a once-per-HTTP-server fallback that destroys upgrade sockets
+ * not claimed by any SrpcServer. Uses setImmediate so all synchronous
+ * upgrade listeners run first.
+ */
+function installUpgradeFallback(httpServer: import('http').Server) {
+    if (_fallbackInstalledServers.has(httpServer)) return;
+    _fallbackInstalledServers.add(httpServer);
+
+    httpServer.on('upgrade', (_req, socket: import('net').Socket) => {
+        setImmediate(() => {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            if (!(socket as any)[UpgradeClaimedSymbol] && !socket.destroyed) {
+                socket.write('HTTP/1.1 400 Bad Request\r\n\r\n');
+                socket.destroy();
+            }
+        });
+    });
+}
 
 export class SrpcServer<
     TMeta extends SrpcMeta = SrpcMeta,
@@ -42,10 +64,13 @@ export class SrpcServer<
 
     private logger: ScopedLogger;
     private wsServer: WebSocket.Server;
+    private httpServer: import('http').Server;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    private upgradeHandler: (...args: any[]) => void;
     private inboundType: SrpcMessageFns<TClientOutput>;
     private outboundType: SrpcMessageFns<TServerOutput>;
 
-    private clientAuthorizer?: (metadata: SrpcMeta) => Promise<boolean | SrpcMeta>;
+    private clientAuthorizer?: (metadata: SrpcMeta, req: IncomingMessage) => Promise<boolean | SrpcMeta>;
     private clientKeyFetcher?: (clientId: string) => Promise<false | string>;
     private streamConnectionHandlers = new Set<(stream: SrpcStream<TMeta>) => void>();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -70,14 +95,35 @@ export class SrpcServer<
         this.authClockDriftMs = appConfig.SRPC_AUTH_CLOCK_DRIFT_MS;
         this.useRealIpHeader = appConfig.USE_REAL_IP_HEADER ?? false;
 
-        // WebSocket server setup
+        // WebSocket server setup — use noServer mode so multiple ws servers
+        // can coexist on the same HTTP server without aborting each other's
+        // upgrade requests (the default `{ server, path }` mode aborts
+        // non-matching upgrades, breaking other ws servers on the same port).
         const app = r(ApplicationServer);
-        this.wsServer = new WebSocket.Server({
-            server: app.getHttpWorker()['server']!,
-            path: options.wsPath,
-            verifyClient: this.verifyClient.bind(this)
-        });
+        this.httpServer = app.getHttpWorker()['server']!;
+        this.wsServer = new WebSocket.Server({ noServer: true });
         this.wsServer.on('connection', this.attachConnection.bind(this));
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        this.upgradeHandler = (req: IncomingMessage, socket: any, head: Buffer) => {
+            const pathname = req.url?.split('?')[0];
+            if (pathname !== options.wsPath) return;
+
+            socket[UpgradeClaimedSymbol] = true;
+
+            this.verifyClient({ origin: '', secure: false, req }, (allowed, code, message) => {
+                if (!allowed) {
+                    socket.write(`HTTP/1.1 ${code ?? 403} ${message ?? 'Forbidden'}\r\n\r\n`);
+                    socket.destroy();
+                    return;
+                }
+                this.wsServer.handleUpgrade(req, socket, head, ws => {
+                    this.wsServer.emit('connection', ws, req);
+                });
+            });
+        };
+        this.httpServer.on('upgrade', this.upgradeHandler);
+        installUpgradeFallback(this.httpServer);
 
         this.logger.info('WebSocket server listening', { path: options.wsPath });
 
@@ -110,7 +156,7 @@ export class SrpcServer<
             return;
         }
 
-        this.validateClientAuth(q).then(
+        this.validateClientAuth(q, info.req).then(
             result => {
                 if (!result) {
                     this.logger.warn('Client failed authentication', { clientId, clientStreamId });
@@ -243,9 +289,9 @@ export class SrpcServer<
     ////////////////////////////////////////
     // Authentication
 
-    private async validateClientAuth(meta: SrpcMeta) {
+    private async validateClientAuth(meta: SrpcMeta, req: IncomingMessage) {
         if (this.clientAuthorizer) {
-            return this.clientAuthorizer(meta);
+            return this.clientAuthorizer(meta, req);
         }
 
         const { authv, appv, ts, id, cid, signature } = meta;
@@ -287,7 +333,7 @@ export class SrpcServer<
         return this.standardSrpcAuthKey;
     }
 
-    setClientAuthorizer(authorizer: (metadata: SrpcMeta) => Promise<boolean | SrpcMeta>) {
+    setClientAuthorizer(authorizer: (metadata: SrpcMeta, req: IncomingMessage) => Promise<boolean | SrpcMeta>) {
         this.clientAuthorizer = authorizer;
     }
 
@@ -297,6 +343,7 @@ export class SrpcServer<
 
     close() {
         clearInterval(this.inactivityCheckInterval);
+        this.httpServer.off('upgrade', this.upgradeHandler);
         for (const stream of this.streamsById.values()) {
             this.cleanupStream(stream, 'disconnect');
         }

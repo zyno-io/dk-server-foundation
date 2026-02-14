@@ -1,9 +1,9 @@
 import { App } from '@deepkit/app';
 import { FrameworkModule } from '@deepkit/framework';
 import { HttpRouter } from '@deepkit/http';
-import { Logger } from '@deepkit/logger';
+import { Logger, ScopedLogger } from '@deepkit/logger';
 import { ReflectionKind } from '@deepkit/type';
-import { OpenAPIService } from 'deepkit-openapi';
+import { OpenAPIDocument } from 'deepkit-openapi-core';
 import { writeFile } from 'fs/promises';
 import path from 'path';
 import { stringify } from 'yaml';
@@ -53,11 +53,19 @@ export function logRoutesWithoutReturnType(app: App<any>) {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function serializeOpenApiSchema(app: App<any>) {
+    const router = app.get(HttpRouter);
+    const logger = app.get(Logger) as unknown as ScopedLogger;
+    const routes = router.getRoutes();
+    const doc = new OpenAPIDocument(routes, logger, { contentTypes: ['application/json'] });
+    return doc.serializeDocument();
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function dumpOpenApiSchema(app: App<any>) {
     const logger = app.get(Logger);
     try {
-        const openapiSvc = app.get(OpenAPIService);
-        const result = openapiSvc.serialize();
+        const result = serializeOpenApiSchema(app);
         const yaml = stringify(result, {
             aliasDuplicateObjects: false
         });

@@ -6,7 +6,6 @@ import { HttpKernel, HttpListener, HttpModule } from '@deepkit/http';
 import { InjectorModule, ProviderWithScope, Token } from '@deepkit/injector';
 import { ConsoleTransport, Logger } from '@deepkit/logger';
 import { DatabaseRegistry } from '@deepkit/orm';
-import { OpenAPIModule } from 'deepkit-openapi';
 
 import { BaseDatabase } from '../database';
 import { replaceMigrationCommands } from '../database/migration';
@@ -71,19 +70,7 @@ export function createApp<T extends CreateAppOptions<any>>(options: T) {
         ...appOptions,
         config: config,
         controllers: [ReplCommand, ProviderInvokeCommand, ...(appOptions.controllers ?? [])],
-        imports: [
-            ...(appOptions.imports ?? []),
-            frameworkModule,
-            new HealthModule(),
-            ...(isDevelopment
-                ? [
-                      new OpenAPIModule({
-                          prefix: '/_openapi/',
-                          contentTypes: ['application/json']
-                      })
-                  ]
-                : [])
-        ],
+        imports: [...(appOptions.imports ?? []), frameworkModule, new HealthModule()],
         providers: [
             HttpListener,
             HttpWorkflowListenerOptions,
