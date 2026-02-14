@@ -313,11 +313,7 @@ assertInput(value, 'fieldName'); // Custom field name in error
 ### Decorator Utilities
 
 ```typescript
-import {
-    createSymbolAttachmentClassDecorator,
-    createRegistryClassDecorator,
-    getRegisteredClasses
-} from '@signal24/dk-server-foundation';
+import { createSymbolAttachmentClassDecorator, createRegistryClassDecorator, getRegisteredClasses } from '@signal24/dk-server-foundation';
 
 // Registry decorator pattern
 const PLUGINS = Symbol('plugins');

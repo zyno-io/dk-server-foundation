@@ -1,0 +1,1 @@
+export { initDevConsole } from './patches';

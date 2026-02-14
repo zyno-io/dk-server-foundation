@@ -19,14 +19,16 @@
     },
     "scripts": {
         "clean": "rm -rf dist",
-        "build": "yarn clean && tsc -p tsconfig.json && chmod +x dist/src/cli/*.js && date",
+        "build": "yarn clean && yarn gen:proto && yarn build:devconsole && tsc -p tsconfig.json && chmod +x dist/src/cli/*.js && date",
+        "build:devconsole": "cd devconsole && yarn install && yarn build",
         "test": "tsc -p tsconfig.test.json && dksf-test",
         "format": "npx oxlint --fix --fix-suggestions --fix-dangerously && prettier --write .",
         "dev": "tsc -p tsconfig.json --watch",
         "postinstall": "dksf-install || yarn postinstall:alt",
         "postinstall:alt": "patch-package && deepkit-type-install",
-        "testapp": "yarn build && node dist/src/testapp/bootstrap server:start",
-        "gen:proto": "ts-node src/cli/dksf-gen-proto.ts resources/proto/test.proto resources/proto/generated/test"
+        "testapp": "yarn clean && tsc -p tsconfig.testapp.json && node dist/testapp/bootstrap server:start",
+        "demoapp": "yarn build:devconsole && dksf-dev run -p tsconfig.demoapp.json dist/demoapp/bootstrap",
+        "gen:proto": "ts-node src/cli/dksf-gen-proto.ts resources/proto/test.proto resources/proto/generated/test && ts-node src/cli/dksf-gen-proto.ts resources/proto/devconsole.proto resources/proto/generated/devconsole"
     },
     "author": "Sean Ferguson <support@sgnl24.com>",
     "license": "MIT",
@@ -116,6 +118,18 @@
         "type-fest": "^5.4.4",
         "typescript": "~5.9"
     },
+    "files": [
+        "dist/src/",
+        "dist/devconsole/",
+        "dist/resources/",
+        "docs/",
+        "patches/",
+        "src/",
+        "types.d.ts",
+        "!**/*.tsbuildinfo",
+        "!**/CLAUDE.md",
+        "!**/*_MIGRATION_GUIDE.md"
+    ],
     "main": "./dist/src/index.js",
     "types": "./dist/src/index.d.ts",
     "exports": {

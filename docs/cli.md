@@ -147,9 +147,17 @@ These are installed as bin scripts by the package:
 
 ### `dksf-dev`
 
-All-in-one development workflow tool. Subcommands for cleaning, building, running dev servers, migrations, and tests.
+All-in-one development workflow tool. Subcommands for cleaning, building, running dev servers, migrations, tests, and REPL.
 
 Sets `APP_ENV=development` by default if not already set in the environment.
+
+#### Common Options
+
+All subcommands (except `clean`) accept:
+
+| Option                 | Description                                               |
+| ---------------------- | --------------------------------------------------------- |
+| `-p, --tsconfig <file>` | TypeScript config file (default: `tsconfig.json`, or `tsconfig.test.json` for `test`) |
 
 #### `dksf-dev clean`
 
@@ -234,6 +242,20 @@ dksf-dev test --debug
 ```
 
 Runs: `tsc -p tsconfig.test.json`, then `dksf-test` with `--inspect=9268` (or `--inspect-brk=9268` with `--debug`). Extra arguments are passed through to `dksf-test`.
+
+#### `dksf-dev repl`
+
+Builds (if no `dksf-dev run` process is active) and starts an interactive REPL:
+
+```bash
+# Start REPL
+dksf-dev repl
+
+# Debug mode
+dksf-dev repl --debug
+```
+
+Runs: `node --inspect=9227 . repl` (or `--inspect-brk=9227` with `--debug`). See [REPL](#repl) above for usage inside the REPL.
 
 ### `dksf-gen-proto`
 

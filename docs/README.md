@@ -35,4 +35,5 @@
 | [Helpers](./helpers.md)     | Async context, Redis cache/mutex/broadcast, cryptography, data manipulation, transformers, process execution, and more.                |
 | [Telemetry](./telemetry.md) | OpenTelemetry auto-instrumentation for HTTP, database, Redis, DNS, BullMQ, and Sentry error tracking.                                  |
 | [Testing](./testing.md)     | Test facades with per-test database isolation, entity fixtures, mock requests, and SQL mocking.                                        |
+| [DevConsole](./devconsole.md) | Built-in web dashboard for development: HTTP inspector, SRPC monitor, database browser, REPL, worker/mutex/health views, and more.    |
 | [CLI Tools](./cli.md)       | `dksf-dev` workflow (clean/build/run/migrate/test), REPL, provider invoke, migration commands, proto generation, and standalone tools. |

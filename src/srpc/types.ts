@@ -111,6 +111,8 @@ export interface ISrpcServerOptions<TClientOutput extends BaseMessage, TServerOu
     serverMessage: SrpcMessageFns<TServerOutput>;
     wsPath: string;
     debug?: boolean;
+    /** Controls SRPC log output. 'info' (default) logs normally, 'debug' downgrades to debug level, false suppresses all logs. */
+    logLevel?: 'info' | 'debug' | false;
 }
 
 export interface SrpcStream<T = SrpcMeta> extends IByteStreamable {

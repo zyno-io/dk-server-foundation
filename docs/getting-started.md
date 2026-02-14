@@ -59,7 +59,7 @@ app.run();
 - Health check endpoint at `GET /healthz`
 - Multipart form parsing (JSON key: `_payload`)
 - REPL and provider invoke CLI commands
-- OpenAPI docs at `/_openapi/` (development only)
+- [DevConsole](./devconsole.md) at `/_devconsole/` with request inspector, REPL, database browser, and more (development only)
 - Sentry integration (if `SENTRY_DSN` is set)
 - Graceful shutdown with 30-second timeout
 

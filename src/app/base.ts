@@ -85,6 +85,15 @@ export function createApp<T extends CreateAppOptions<any>>(options: T) {
 
     globalState.currentApp = app;
 
+    if (isDevelopment) {
+        try {
+            // eslint-disable-next-line @typescript-eslint/no-require-imports
+            require('../devconsole/patches').initDevConsole(app);
+        } catch {
+            // DevConsole not available
+        }
+    }
+
     replaceMigrationCommands(app, frameworkModule, db);
 
     if (options.config) {

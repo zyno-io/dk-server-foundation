@@ -5,12 +5,12 @@ import { Logger, ScopedLogger } from '@deepkit/logger';
 import { ActiveRecord } from '@deepkit/orm';
 import { assert, AutoIncrement, entity, PrimaryKey } from '@deepkit/type';
 
-import { AutoStart, BaseAppConfig, createApp } from '../app';
-import { onServerShutdownRequested } from '../app/shutdown';
-import { createMySQLDatabase, createPersistedEntity } from '../database';
-import { sleepSecs } from '../helpers';
-import { BaseJob, ExtendedLogger, WorkerJob, WorkerService } from '../services';
-import { withRootSpan } from '../telemetry';
+import { AutoStart, BaseAppConfig, createApp } from '../src/app';
+import { onServerShutdownRequested } from '../src/app/shutdown';
+import { createMySQLDatabase, createPersistedEntity } from '../src/database';
+import { sleepSecs } from '../src/helpers';
+import { BaseJob, ExtendedLogger, WorkerJob, WorkerService } from '../src/services';
+import { withRootSpan } from '../src/telemetry';
 import { SrpcTesterService } from './srpc-test';
 
 @entity.name('sample')

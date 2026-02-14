@@ -59,6 +59,7 @@ This gives you an HTTP server on port 3000 with health checks, CORS, database, l
 | [Testing](#testing)                     | Test facades, fixtures, and request mocking                | [Testing](./docs/testing.md)                 |
 | [Types](#types)                         | Phone numbers, dates, coordinates, and utility types       | [Types](./docs/types.md)                     |
 | [Logging](#logging)                     | Scoped Pino logger with context tracking                   | [Logging](./docs/logging.md)                 |
+| [DevConsole](#devconsole)               | Built-in web dashboard for development monitoring          | [DevConsole](./docs/devconsole.md)           |
 | [CLI Tools](#cli-tools)                 | REPL, provider invoke, migrations, proto generation        | [CLI](./docs/cli.md)                         |
 
 ---
@@ -321,10 +322,12 @@ class MyService {
         hcSvc.register(async () => {
             // Throw to indicate unhealthy
             await checkExternalDependency();
-        });
+        }, 'External API');
     }
 }
 ```
+
+Use `checkIndividual()` for per-check status results (used by DevConsole's Health view).
 
 ## Helpers
 
@@ -400,6 +403,7 @@ logger.error('Failed to process', err);
 
 | Command                                      | Description                                              |
 | -------------------------------------------- | -------------------------------------------------------- |
+| `dksf-dev <cmd>`                             | Dev workflow: clean, build, run, migrate, repl, test     |
 | `dksf-gen-proto <input> <output>`            | Generate TypeScript types from .proto files              |
 | `dksf-install`                               | Postinstall setup (patch-package + deepkit-type-install) |
 | `dksf-update`                                | Update utility                                           |
@@ -414,11 +418,26 @@ logger.error('Failed to process', err);
 | `migration:reset`                            | Reset migrations to a single base migration              |
 | `migration:characters [charset] [collation]` | Standardize database character set                       |
 
+## DevConsole
+
+A built-in web dashboard for development-time monitoring and debugging, automatically enabled when `APP_ENV !== 'production'`. Access it at `http://localhost:{PORT}/_devconsole/` — no setup required.
+
+Features include an HTTP request inspector, SRPC connection monitor, database entity browser with SQL editor, worker job inspector, Redis mutex monitor, health check viewer, environment config display, OpenAPI schema viewer, and a live REPL with access to the DI container.
+
+DevConsole is localhost-only and communicates over SRPC/WebSocket for real-time updates. See [DevConsole](./docs/devconsole.md) for details.
+
+A demo app showcasing all features is included:
+
+```bash
+yarn demoapp
+# then open http://localhost:3000/_devconsole/
+```
+
 ## Important Notes
 
 - **Timezone**: The server enforces UTC. The entry point throws if `TZ !== UTC`.
 - **Identity Maps**: Disabled by default in database sessions for predictable behavior.
-- **Development Mode**: When `APP_ENV !== 'production'`, OpenAPI schema is available at `/_openapi/`, connection pools are smaller, and worker runner/observer auto-start.
+- **Development Mode**: When `APP_ENV !== 'production'`, DevConsole is enabled at `/_devconsole/`, connection pools are smaller, and worker runner/observer auto-start.
 
 ## Commands
 

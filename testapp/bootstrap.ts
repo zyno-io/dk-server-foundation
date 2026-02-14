@@ -12,6 +12,6 @@ process.env = {
 };
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-require('../telemetry/otel/index').init();
+require('../src/telemetry/otel/index').init();
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 require('./sample');

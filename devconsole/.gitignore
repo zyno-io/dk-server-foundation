@@ -1,4 +1,5 @@
 node_modules
+package-lock.json
 .DS_Store
 .yarn/*
 !.yarn/patches
@@ -6,7 +7,4 @@ node_modules
 !.yarn/releases
 !.yarn/sdks
 !.yarn/versions
-openapi.yaml
-_scratch
-resources/proto/generated
-dist
+

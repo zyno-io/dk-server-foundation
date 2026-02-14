@@ -3,12 +3,15 @@ image: node:24-alpine
 default:
   interruptible: true
 
+workflow:
+  rules:
+    - if: $CI_COMMIT_BRANCH
+
 stages:
-  - test
+  - build
   - deploy
 
-.test_base:
-  stage: deploy
+.test_services:
   services:
     - name: mysql:8
       variables:
@@ -30,38 +33,63 @@ stages:
     REDIS_HOST: redis
     REDIS_PORT: 6379
 
-.test_script: &test_script |
-  set -x
-
-  yarn --immutable
-
-  yarn gen:proto
-  yarn test
-  yarn testapp
-
-  npm run build
-
-test:
-  extends: .test_base
-  script: *test_script
-  except:
-    - main
-
-test and deploy:
-  extends: .test_base
+build:devconsole:
+  stage: build
   script:
-    - *test_script
+    - yarn --immutable
+    - yarn gen:proto
+    - cd devconsole && yarn install --immutable && yarn build
+  artifacts:
+    paths:
+      - dist/devconsole/
+
+test-and-build:
+  stage: build
+  extends: .test_services
+  script:
     - |
+      set -x
+
       apk add git
+
+      yarn --immutable
+
+      yarn gen:proto
+      yarn test
+      yarn testapp
+
+      rm -rf dist
+      npx tsc -p tsconfig.json
+      chmod +x dist/src/cli/*.js
 
       BUILD_VERSION=$(TZ=UTC0 git show -s --format=%cd --date=format-local:'%y.%m%d.%H%M' HEAD)
       BUILD_VERSION=$(echo -n ${BUILD_VERSION} | sed -E 's/\.0+/./g')
+
+      if [ "$CI_COMMIT_BRANCH" != "main" ]; then
+        SHORT_SHA=$(echo "$CI_COMMIT_SHA" | head -c 7)
+        BUILD_VERSION="${BUILD_VERSION}-canary.${SHORT_SHA}"
+      fi
+
       npm version ${BUILD_VERSION} --git-tag-version=false
+  artifacts:
+    paths:
+      - dist/
+      - package.json
 
+deploy:
+  stage: deploy
+  needs:
+    - build:devconsole
+    - test-and-build
+  script:
+    - |
       npm config set -- //${PRIVATE_NPM_URL}/:_authToken="${PRIVATE_NPM_PUBLISHER_TOKEN}"
-      npm publish --registry https://${PRIVATE_NPM_URL}/
 
-      npm config set //registry.npmjs.org/:_authToken="${NPM_PUBLISH_TOKEN}"
-      npm publish --registry https://registry.npmjs.org/ --access public
-  only:
-    - main
+      if [ "$CI_COMMIT_BRANCH" = "main" ]; then
+        npm publish --registry https://${PRIVATE_NPM_URL}/
+
+        npm config set //registry.npmjs.org/:_authToken="${NPM_PUBLISH_TOKEN}"
+        npm publish --registry https://registry.npmjs.org/ --access public
+      else
+        npm publish --registry https://${PRIVATE_NPM_URL}/ --tag canary
+      fi

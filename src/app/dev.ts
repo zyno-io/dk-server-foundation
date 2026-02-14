@@ -8,11 +8,25 @@ import { writeFile } from 'fs/promises';
 import path from 'path';
 import { stringify } from 'yaml';
 
+import { createLogger } from '../services';
 import { getAppConfig } from './resolver';
 import { isDevFeatureEnabled } from './config';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function doDevPostAppStartup(app: App<any>) {
+    try {
+        const { DevConsoleStore } = await import('../devconsole/devconsole.store');
+        const store = DevConsoleStore.get();
+        if (store) {
+            const { DevConsoleSrpcServer } = await import('../devconsole/devconsole.ws');
+            const srpcServer = new DevConsoleSrpcServer(createLogger('DevConsole'));
+            store.onEvent = (type, data) => srpcServer.broadcast(type, data);
+        }
+    } catch (err) {
+        const logger = app.get(Logger);
+        logger.warn('Failed to start DevConsole SRPC server', err);
+    }
+
     // this hook seems to run before the router even outputs HTTP routes, which means
     // anything we output is hard for the developer to see. thus, we will run dev tooling
     // with a delay.
@@ -56,7 +70,7 @@ export function logRoutesWithoutReturnType(app: App<any>) {
 export function serializeOpenApiSchema(app: App<any>) {
     const router = app.get(HttpRouter);
     const logger = app.get(Logger) as unknown as ScopedLogger;
-    const routes = router.getRoutes();
+    const routes = router.getRoutes().filter(r => !r.getFullPath().startsWith('/_devconsole'));
     const doc = new OpenAPIDocument(routes, logger, { contentTypes: ['application/json'] });
     return doc.serializeDocument();
 }

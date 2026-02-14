@@ -5,10 +5,10 @@ import WebSocket from 'ws';
 
 import { ApplicationServer } from '@deepkit/framework';
 
-import { ClientMessage, ServerMessage } from '../../resources/proto/generated/test/test';
-import { AutoStart, BaseAppConfig } from '../app';
-import { sleepSecs, uuid7 } from '../helpers';
-import { SrpcByteStream, SrpcClient, SrpcError, SrpcMeta, SrpcServer, SrpcStream } from '../srpc';
+import { ClientMessage, ServerMessage } from '../resources/proto/generated/test/test';
+import { AutoStart, BaseAppConfig } from '../src/app';
+import { sleepSecs, uuid7 } from '../src/helpers';
+import { SrpcByteStream, SrpcClient, SrpcError, SrpcMeta, SrpcServer, SrpcStream } from '../src/srpc';
 
 const TEST_WS_PATH = '/srpc-test';
 
@@ -173,6 +173,8 @@ export class SrpcTesterService {
 
         // Run legacy raw WebSocket test for backwards compatibility
         await this.testRawWebsocketClient();
+
+        await this.testUnmatchedUpgradeRejection();
 
         this.logger.info('All SRPC tests passed!');
     }
@@ -663,6 +665,58 @@ export class SrpcTesterService {
 
         this.logger.info('  ✓ Raw WebSocket echo request');
         this.logger.info('[Test End] Raw WebSocket Client (backwards compatibility)');
+    }
+
+    private async testUnmatchedUpgradeRejection() {
+        this.logger.info('[Test Start] Unmatched Upgrade Rejection');
+
+        // Send a WebSocket upgrade request to a path no SrpcServer handles.
+        // The fallback handler should respond with 400 and destroy the socket.
+        await new Promise<void>((resolve, reject) => {
+            // eslint-disable-next-line @typescript-eslint/no-require-imports
+            const http = require('http');
+            const req = http.request({
+                hostname: 'localhost',
+                port: this.httpPort,
+                path: '/nonexistent-ws-path',
+                headers: {
+                    Connection: 'Upgrade',
+                    Upgrade: 'websocket',
+                    'Sec-WebSocket-Version': '13',
+                    'Sec-WebSocket-Key': Buffer.from(uuid7()).toString('base64')
+                }
+            });
+
+            const timeout = setTimeout(() => {
+                req.destroy();
+                reject(new Error('Unmatched upgrade test timed out — socket was not rejected'));
+            }, 3000);
+
+            req.on('upgrade', () => {
+                clearTimeout(timeout);
+                reject(new Error('Upgrade should not have succeeded for unmatched path'));
+            });
+
+            req.on('response', (res: { statusCode: number }) => {
+                clearTimeout(timeout);
+                if (res.statusCode === 400) {
+                    resolve();
+                } else {
+                    reject(new Error(`Expected 400 but got ${res.statusCode}`));
+                }
+            });
+
+            req.on('error', () => {
+                // Socket destroyed before full response — also acceptable
+                clearTimeout(timeout);
+                resolve();
+            });
+
+            req.end();
+        });
+
+        this.logger.info('  ✓ Unmatched upgrade path rejected');
+        this.logger.info('[Test End] Unmatched Upgrade Rejection');
     }
 
     private getServerSecret() {

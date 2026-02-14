@@ -41,11 +41,14 @@ yarn test path/to/file.spec.ts
 yarn format
 ```
 
-### Test Application
+### Test & Demo Applications
 
 ```bash
 # Build and run the test application
 yarn testapp
+
+# Run the demo app (showcases DevConsole features)
+yarn demoapp
 ```
 
 ## Architecture Overview
@@ -56,7 +59,7 @@ Applications are created using the `createApp()` factory function (src/app/base.
 
 - **Dependency Injection**: Uses Deepkit's DI system with custom resolver functions (`resolve()` or `r()`) for accessing providers
 - **Configuration**: Uses `@signal24/config` with a custom loader (CustomConfigLoader) that supports environment variables and defaults
-- **Module System**: Based on Deepkit's module architecture with framework, HTTP, healthcheck, and optional OpenAPI modules (dev only)
+- **Module System**: Based on Deepkit's module architecture with framework, HTTP, healthcheck, and optional DevConsole/OpenAPI modules (dev only)
 
 Key concepts:
 
@@ -233,6 +236,7 @@ Custom types (src/types/):
 
 ## CLI Tools
 
+- `dksf-dev`: All-in-one dev workflow (clean, build, run, migrate, repl, test) with `-p/--tsconfig` support (src/cli/dksf-dev.ts)
 - `dksf-test`: Test runner that compiles and runs `node --test` (src/cli/dksf-test.ts)
 - `dksf-install`: Post-install script for setup (src/cli/dksf-install.ts)
 - `dksf-update`: Update utility (src/cli/dksf-update.ts)
@@ -242,7 +246,9 @@ Custom types (src/types/):
 
 When `APP_ENV !== 'production'`:
 
-- OpenAPI schema route (`/_openapi/`) is automatically available in development builds; set `ENABLE_OPENAPI_SCHEMA` to also dump the schema to `openapi.yaml`
+- **DevConsole**: Built-in web dashboard at `/_devconsole/`, initialized via `initDevConsole()` in `src/devconsole/patches.ts`. Provides HTTP request inspector, SRPC connection monitor, database entity browser with SQL editor, BullMQ worker inspector, Redis mutex monitor, health check viewer, environment config display, OpenAPI schema viewer, and a live REPL. Localhost-only access enforced by `DevConsoleLocalhostMiddleware`. Uses SRPC over WebSocket (`/_devconsole/ws`) for real-time push updates. Frontend is a Vue 3 SPA in `devconsole/` that builds to `dist/devconsole/`. Server-side code lives in `src/devconsole/` — `patches.ts` monkey-patches core components (HTTP kernel, SRPC, worker observer, mutex) to intercept events; `devconsole.store.ts` holds ring buffers; `devconsole.ws.ts` is the SRPC server; `devconsole.controller.ts` serves static assets.
+- **Demo App**: `yarn demoapp` runs a demo app with auto-generated traffic to showcase all DevConsole features
+- Set `ENABLE_OPENAPI_SCHEMA` to also dump the schema to `openapi.yaml` on disk
 - Additional debugging tools in `src/app/dev.ts`
 - Lower MySQL/PostgreSQL connection pool limits (5 vs 10)
 - Shorter idle timeouts

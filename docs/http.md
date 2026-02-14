@@ -129,9 +129,9 @@ By default, the workflow listener attaches the request body to non-HTTP errors f
 import { HttpWorkflowListenerOptions } from '@signal24/dk-server-foundation';
 ```
 
-| Property                 | Type      | Default                                   |
-| ------------------------ | --------- | ----------------------------------------- |
-| `logRequestBodyOnError`  | `boolean` | `true` in development, `false` in production |
+| Property                | Type      | Default                                      |
+| ----------------------- | --------- | -------------------------------------------- |
+| `logRequestBodyOnError` | `boolean` | `true` in development, `false` in production |
 
 When `NODE_ENV=production`, request body logging is disabled to avoid leaking sensitive data. Override by providing `HttpWorkflowListenerOptions` as a DI provider:
 
