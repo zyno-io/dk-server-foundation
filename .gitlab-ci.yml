@@ -79,6 +79,10 @@ test-and-build:
 
 deploy:
   stage: deploy
+  rules:
+    - if: $CI_COMMIT_MESSAGE =~ /\[skip deploy\]/
+      when: never
+    - when: on_success
   needs:
     - build:devconsole
     - test-and-build
