@@ -10,6 +10,7 @@ workflow:
 stages:
   - build
   - deploy
+  - mirror
 
 .test_services:
   services:
@@ -93,3 +94,18 @@ deploy:
       else
         npm publish --registry https://${PRIVATE_NPM_URL}/ --tag canary
       fi
+
+mirror:
+  stage: mirror
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+  image:
+    name: alpine/git
+    entrypoint: ['']
+  script: |
+    export GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=no"
+    mkdir ~/.ssh
+    echo $GITHUB_SSH_KEY_B64 | base64 -d > ~/.ssh/id_ed25519
+    chmod 600 ~/.ssh/id_ed25519
+    git remote add github git@github.com:signal24/dk-server-foundation.git
+    git push -u github HEAD:main --force
