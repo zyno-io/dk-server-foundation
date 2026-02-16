@@ -88,15 +88,15 @@ deploy:
     - test-and-build
   script:
     - |
-      npm config set -- //${PRIVATE_NPM_URL}/:_authToken="${PRIVATE_NPM_PUBLISHER_TOKEN}"
+      npm config set -- //${PRIVATE_NPM_HOST}/:_authToken="${PRIVATE_NPM_PUBLISHER_TOKEN}"
 
       if [ "$CI_COMMIT_BRANCH" = "main" ]; then
-        npm publish --registry https://${PRIVATE_NPM_URL}/
+        npm publish --registry https://${PRIVATE_NPM_HOST}/
 
         npm config set //registry.npmjs.org/:_authToken="${NPM_PUBLISH_TOKEN}"
         npm publish --registry https://registry.npmjs.org/ --access public
       else
-        npm publish --registry https://${PRIVATE_NPM_URL}/ --tag canary
+        npm publish --registry https://${PRIVATE_NPM_HOST}/ --tag canary
       fi
 
 mirror:

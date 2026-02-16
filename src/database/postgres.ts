@@ -60,12 +60,15 @@ export function createPostgresDatabase(
 
             const { enableLocksTable, ...otherConfig } = config;
 
+            const ssl = appConfig.PG_SSL ? { rejectUnauthorized: appConfig.PG_SSL_REJECT_UNAUTHORIZED ?? true } : undefined;
+
             const adapter = new PostgresDatabaseAdapter({
                 host: appConfig.PG_HOST,
                 port: appConfig.PG_PORT,
                 user: appConfig.PG_USER,
                 password: appConfig.PG_PASSWORD_SECRET,
                 database: appConfig.PG_DATABASE,
+                ssl,
                 max: appConfig.PG_CONNECTION_LIMIT ?? (isProduction ? 10 : 5),
                 idleTimeoutMillis: (appConfig.PG_IDLE_TIMEOUT_SECONDS ?? (isProduction ? 60 : 5)) * 1000,
                 ...otherConfig

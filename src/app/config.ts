@@ -20,6 +20,8 @@ export class BaseAppConfig {
     PG_PASSWORD_SECRET?: string;
     PG_DATABASE?: string;
     PG_SCHEMA?: string;
+    PG_SSL?: boolean;
+    PG_SSL_REJECT_UNAUTHORIZED?: boolean;
     PG_CONNECTION_LIMIT?: number;
     PG_IDLE_TIMEOUT_SECONDS?: number;
 
