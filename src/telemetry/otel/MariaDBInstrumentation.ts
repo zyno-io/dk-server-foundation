@@ -52,37 +52,76 @@ export class MariaDBInstrumentation extends InstrumentationBase {
         );
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
+    private _originals = new Map<string, Function>();
+
+    // mariadb 3.5+ uses ESM, where exports are writable but not configurable.
+    // shimmer's _wrap uses Object.defineProperty which requires configurable,
+    // so we fall back to direct assignment for non-configurable properties.
+    private _wrapCompat<K extends keyof typeof mariadbTypes>(
+        moduleExports: typeof mariadbTypes,
+        name: K,
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
+        wrapper: (original: Function) => Function
+    ) {
+        const descriptor = Object.getOwnPropertyDescriptor(moduleExports, name);
+        // oxlint-disable-next-line typescript/no-unsafe-function-type
+        const original = moduleExports[name] as Function;
+        if (descriptor && !descriptor.configurable) {
+            this._originals.set(name, original);
+            // oxlint-disable-next-line typescript/no-explicit-any
+            (moduleExports as any)[name] = wrapper(original);
+        } else {
+            // oxlint-disable-next-line typescript/no-explicit-any
+            this._wrap(moduleExports, name, wrapper as any);
+        }
+    }
+
+    private _unwrapCompat<K extends keyof typeof mariadbTypes>(moduleExports: typeof mariadbTypes, name: K) {
+        const original = this._originals.get(name);
+        if (original) {
+            // oxlint-disable-next-line typescript/no-explicit-any
+            (moduleExports as any)[name] = original;
+            this._originals.delete(name);
+        } else {
+            this._unwrap(moduleExports, name);
+        }
+    }
+
     protected init() {
         return [
             new InstrumentationNodeModuleDefinition(
                 'mariadb',
                 ['3.*'],
                 moduleExports => {
-                    if (isWrapped(moduleExports.createConnection)) {
-                        this._unwrap(moduleExports, 'createConnection');
+                    // ESM namespace objects are sealed (non-configurable, non-writable).
+                    // Create a mutable shallow copy so we can patch the exports.
+                    if (!Object.isExtensible(moduleExports)) {
+                        moduleExports = { ...moduleExports };
                     }
-                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    this._wrap(moduleExports, 'createConnection', this._patchCreateConnection() as any);
+
+                    if (isWrapped(moduleExports.createConnection)) {
+                        this._unwrapCompat(moduleExports, 'createConnection');
+                    }
+                    this._wrapCompat(moduleExports, 'createConnection', this._patchCreateConnection());
 
                     if (isWrapped(moduleExports.createPool)) {
-                        this._unwrap(moduleExports, 'createPool');
+                        this._unwrapCompat(moduleExports, 'createPool');
                     }
-                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    this._wrap(moduleExports, 'createPool', this._patchCreatePool() as any);
+                    this._wrapCompat(moduleExports, 'createPool', this._patchCreatePool());
 
                     if (isWrapped(moduleExports.createPoolCluster)) {
-                        this._unwrap(moduleExports, 'createPoolCluster');
+                        this._unwrapCompat(moduleExports, 'createPoolCluster');
                     }
-                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    this._wrap(moduleExports, 'createPoolCluster', this._patchCreatePoolCluster() as any);
+                    this._wrapCompat(moduleExports, 'createPoolCluster', this._patchCreatePoolCluster());
 
                     return moduleExports;
                 },
                 moduleExports => {
                     if (moduleExports === undefined) return;
-                    this._unwrap(moduleExports, 'createConnection');
-                    this._unwrap(moduleExports, 'createPool');
-                    this._unwrap(moduleExports, 'createPoolCluster');
+                    this._unwrapCompat(moduleExports, 'createConnection');
+                    this._unwrapCompat(moduleExports, 'createPool');
+                    this._unwrapCompat(moduleExports, 'createPoolCluster');
                 }
             )
         ];
@@ -223,7 +262,7 @@ export class MariaDBInstrumentation extends InstrumentationBase {
 
     private _patchQuery(connection: mariadbTypes.Connection | mariadbTypes.Pool) {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
-        return (originalQuery: Function): mariadbTypes.Connection['query'] => {
+        return (originalQuery: Function) => {
             // eslint-disable-next-line @typescript-eslint/no-this-alias
             const thisPlugin = this;
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
