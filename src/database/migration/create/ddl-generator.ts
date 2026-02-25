@@ -590,6 +590,8 @@ function mysqlTypeDef(col: ColumnSchema): string {
             return 'TIMESTAMP';
         case 'text':
             return 'TEXT';
+        case 'binary':
+            return `BINARY(${col.size || 16})`;
         case 'blob':
             return 'BLOB';
         case 'json':

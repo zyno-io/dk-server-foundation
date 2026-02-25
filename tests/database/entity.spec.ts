@@ -2,9 +2,9 @@ import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { ActiveRecord, DatabaseAdapter, DatabaseEntityRegistry, DatabaseSession } from '@deepkit/orm';
 import { SQLDatabaseAdapter } from '@deepkit/sql';
-import { AutoIncrement, entity, MySQL, PrimaryKey } from '@deepkit/type';
+import { AutoIncrement, entity, MySQL, PrimaryKey, UUID } from '@deepkit/type';
 
-import { ApiName, createPersistedEntity, getEntityFields, MySQLCoordinate, NullableMySQLCoordinate } from '../../src';
+import { ApiName, createPersistedEntity, getEntityFields, MySQLCoordinate, NullableMySQLCoordinate, UuidString } from '../../src';
 import {
     getDirtyDetails,
     getEntityOriginal,
@@ -378,5 +378,61 @@ describe('MySQLCoordinate / POINT column', () => {
         assertMatchObject(retrieved.nullableLocation!, { x: -180, y: 90 });
         assertMatchObject(retrieved.locationWithApiName, { x: 179.9999, y: -89.9999 });
         assertMatchObject(retrieved.nullableLocationWithApiName!, { x: -179.9999, y: 89.9999 });
+    });
+});
+
+// --- UUID round-trip tests ---
+
+@entity.name('test_uuid_string')
+class TestUuidStringEntity extends ActiveRecord {
+    id!: number & AutoIncrement & PrimaryKey;
+    token!: UuidString;
+}
+
+describe('UuidString round-trip', () => {
+    forEachAdapter(({ createFacade }) => {
+        const tf = createFacade({ entities: [TestUuidStringEntity] });
+        before(
+            async () => {
+                await tf.start();
+                await tf.createTables();
+            },
+            { timeout: 10_000 }
+        );
+        after(() => tf.stop(), { timeout: 10_000 });
+
+        it('should insert and retrieve UuidString as a plain string', async () => {
+            const uuidValue = '550e8400-e29b-41d4-a716-446655440000';
+            const created = await createPersistedEntity(TestUuidStringEntity, { token: uuidValue as UuidString });
+            const retrieved = await TestUuidStringEntity.query().filter({ id: created.id }).findOne();
+            assert.strictEqual(retrieved.token, uuidValue);
+        });
+    });
+});
+
+@entity.name('test_uuid_builtin')
+class TestUuidBuiltinEntity extends ActiveRecord {
+    id!: number & AutoIncrement & PrimaryKey;
+    externalId!: UUID;
+}
+
+describe('Deepkit UUID round-trip', () => {
+    forEachAdapter(({ createFacade }) => {
+        const tf = createFacade({ entities: [TestUuidBuiltinEntity] });
+        before(
+            async () => {
+                await tf.start();
+                await tf.createTables();
+            },
+            { timeout: 10_000 }
+        );
+        after(() => tf.stop(), { timeout: 10_000 });
+
+        it('should insert and retrieve UUID as a plain string', async () => {
+            const uuidValue = '550e8400-e29b-41d4-a716-446655440000' as UUID;
+            const created = await createPersistedEntity(TestUuidBuiltinEntity, { externalId: uuidValue });
+            const retrieved = await TestUuidBuiltinEntity.query().filter({ id: created.id }).findOne();
+            assert.strictEqual(retrieved.externalId, uuidValue);
+        });
     });
 });

@@ -9,7 +9,8 @@ import {
     TypeLiteral,
     typeAnnotation,
     databaseAnnotation,
-    validationAnnotation
+    validationAnnotation,
+    isUUIDType
 } from '@deepkit/type';
 
 import { BaseDatabase } from '../../common';
@@ -252,6 +253,11 @@ function resolveColumnType(type: Type, columnName: string, dialect: Dialect, par
         if (result) return result;
     }
 
+    // Deepkit's built-in UUID type (string & TypeAnnotation<'UUIDv4'>)
+    if (isUUIDType(type)) {
+        return dialect === 'mysql' ? { type: 'binary', size: 16 } : { type: 'uuid' };
+    }
+
     // Check dialect-specific database annotation
     const dbAnnotation = databaseAnnotation.getDatabase<{ type?: string }>(type, dialect);
     if (dbAnnotation?.type) {
@@ -305,19 +311,24 @@ function resolveIntersectionType(type: TypeIntersection, columnName: string, dia
         if (result) return result;
     }
 
-    // Priority 4: dksf:length annotation
+    // Priority 4: Deepkit's built-in UUID type (string & TypeAnnotation<'UUIDv4'>)
+    if (isUUIDType(type)) {
+        return dialect === 'mysql' ? { type: 'binary', size: 16 } : { type: 'uuid' };
+    }
+
+    // Priority 5: dksf:length annotation
     const lengthAnnotation = typeAnnotation.getType(type, 'dksf:length');
     if (lengthAnnotation?.kind === ReflectionKind.literal && typeof lengthAnnotation.literal === 'number') {
         return { type: 'char', size: lengthAnnotation.literal };
     }
 
-    // Priority 5: MaxLength validation
+    // Priority 6: MaxLength validation
     const maxLength = getMaxLength(type);
     if (maxLength !== undefined) {
         return { type: 'varchar', size: maxLength };
     }
 
-    // Priority 6: Find the base type in the intersection members
+    // Priority 7: Find the base type in the intersection members
     for (const member of type.types) {
         // Skip annotation-only types (PrimaryKey, AutoIncrement, Index, etc.)
         if (

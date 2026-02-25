@@ -3893,4 +3893,88 @@ describe('bug fixes', () => {
             assert.ok(dropSeq!.includes('users_id_seq'), 'Should use conventional sequence name as fallback: ' + dropSeq);
         });
     });
+
+    describe('UUID / binary type handling', () => {
+        it('should generate BINARY(16) for MySQL binary columns', () => {
+            const diff: SchemaDiff = {
+                dialect: 'mysql',
+                addedTables: [
+                    table('tokens', [
+                        col({ name: 'id', type: 'binary', size: 16, isPrimaryKey: true, ordinalPosition: 1 }),
+                        col({ name: 'name', type: 'varchar', size: 255, ordinalPosition: 2 })
+                    ])
+                ],
+                removedTables: [],
+                modifiedTables: []
+            };
+
+            const stmts = generateDDL(diff);
+            const createStmt = stmts.find(s => s.includes('CREATE TABLE'));
+            assert.ok(createStmt, 'Should emit CREATE TABLE');
+            assert.ok(createStmt!.includes('BINARY(16)'), 'Should use BINARY(16) for binary column: ' + createStmt);
+        });
+
+        it('should generate UUID for PostgreSQL uuid columns', () => {
+            const diff: SchemaDiff = {
+                dialect: 'postgres',
+                addedTables: [
+                    table('tokens', [
+                        col({ name: 'id', type: 'uuid', size: undefined, isPrimaryKey: true, ordinalPosition: 1 }),
+                        col({ name: 'name', type: 'varchar', size: 255, ordinalPosition: 2 })
+                    ])
+                ],
+                removedTables: [],
+                modifiedTables: []
+            };
+
+            const stmts = generateDDL(diff);
+            const createStmt = stmts.find(s => s.includes('CREATE TABLE'));
+            assert.ok(createStmt, 'Should emit CREATE TABLE');
+            assert.ok(createStmt!.includes('UUID'), 'Should use UUID for uuid column: ' + createStmt);
+        });
+
+        it('should generate CHAR(36) for UuidString columns on MySQL', () => {
+            const diff: SchemaDiff = {
+                dialect: 'mysql',
+                addedTables: [table('tokens', [col({ name: 'id', type: 'char', size: 36, isPrimaryKey: true, ordinalPosition: 1 })])],
+                removedTables: [],
+                modifiedTables: []
+            };
+
+            const stmts = generateDDL(diff);
+            const createStmt = stmts.find(s => s.includes('CREATE TABLE'));
+            assert.ok(createStmt, 'Should emit CREATE TABLE');
+            assert.ok(createStmt!.includes('CHAR(36)'), 'Should use CHAR(36) for UuidString column: ' + createStmt);
+        });
+
+        it('should generate CHAR(36) for UuidString columns on PostgreSQL', () => {
+            const diff: SchemaDiff = {
+                dialect: 'postgres',
+                addedTables: [table('tokens', [col({ name: 'id', type: 'char', size: 36, isPrimaryKey: true, ordinalPosition: 1 })])],
+                removedTables: [],
+                modifiedTables: []
+            };
+
+            const stmts = generateDDL(diff);
+            const createStmt = stmts.find(s => s.includes('CREATE TABLE'));
+            assert.ok(createStmt, 'Should emit CREATE TABLE');
+            assert.ok(createStmt!.includes('CHAR(36)'), 'Should use CHAR(36) for UuidString column: ' + createStmt);
+        });
+
+        it('should not detect changes when binary(16) matches between entity and DB', async () => {
+            const entity = schema(table('tokens', [col({ name: 'id', type: 'binary', size: 16, isPrimaryKey: true, ordinalPosition: 1 })]));
+            const db = schema(table('tokens', [col({ name: 'id', type: 'binary', size: 16, isPrimaryKey: true, ordinalPosition: 1 })]));
+
+            const diff = await compareSchemas(entity, db, 'mysql', false);
+            assert.equal(diff.modifiedTables.length, 0, 'Matching binary(16) columns should not produce a diff');
+        });
+
+        it('should not detect changes when uuid matches between entity and DB', async () => {
+            const entity = schema(table('tokens', [col({ name: 'id', type: 'uuid', size: undefined, isPrimaryKey: true, ordinalPosition: 1 })]));
+            const db = schema(table('tokens', [col({ name: 'id', type: 'uuid', size: undefined, isPrimaryKey: true, ordinalPosition: 1 })]));
+
+            const diff = await compareSchemas(entity, db, 'postgres', false);
+            assert.equal(diff.modifiedTables.length, 0, 'Matching uuid columns should not produce a diff');
+        });
+    });
 });

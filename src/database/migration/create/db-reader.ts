@@ -397,6 +397,9 @@ function inferMySQLSize(dataType: string, columnType: string, charMaxLen: number
     if (dataType === 'tinyint' && columnType.startsWith('tinyint(1)')) {
         return 1;
     }
+    if (dataType === 'binary') {
+        return charMaxLen != null ? Number(charMaxLen) : undefined;
+    }
     if (dataType === 'decimal' || dataType === 'numeric') {
         return numPrecision != null ? Number(numPrecision) : undefined;
     }
