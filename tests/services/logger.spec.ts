@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { Logger, LoggerLevel } from '@deepkit/logger';
 import debug from 'debug';
 
-import { BaseAppConfig, createApp, DecoratedError, ExtendedLogger, pinoLogger, setGlobalErrorReporter } from '../../src';
+import { BaseAppConfig, createApp, createLogger, DecoratedError, ExtendedLogger, pinoLogger, setGlobalErrorReporter } from '../../src';
 
 describe('logger', () => {
     describe('injection', () => {
@@ -209,6 +209,26 @@ describe('logger', () => {
         scopedWithData.debug('message with session');
         assert.strictEqual(debugSpy.mock.callCount(), 1);
         assert.deepStrictEqual(debugSpy.mock.calls[0].arguments, [{ scope: 'mixedScope', sessionId: 'session-123' }, 'message with session']);
+    });
+
+    it('should return independent loggers when createLogger is called with same name but different data', () => {
+        debug.enable('SipClient');
+        const logger1 = createLogger('SipClient', { extensionId: 'ext-100' });
+        const logger2 = createLogger('SipClient', { extensionId: 'ext-200' });
+
+        // Should be different instances
+        assert.notStrictEqual(logger1, logger2);
+
+        // Each should log with its own extensionId
+        logger1.debug('message from ext-100');
+        assert.strictEqual(debugSpy.mock.callCount(), 1);
+        assert.deepStrictEqual(debugSpy.mock.calls[0].arguments, [{ scope: 'SipClient', extensionId: 'ext-100' }, 'message from ext-100']);
+
+        debugSpy.mock.resetCalls();
+
+        logger2.debug('message from ext-200');
+        assert.strictEqual(debugSpy.mock.callCount(), 1);
+        assert.deepStrictEqual(debugSpy.mock.calls[0].arguments, [{ scope: 'SipClient', extensionId: 'ext-200' }, 'message from ext-200']);
     });
 
     it('should correctly handle errors passed as the only argument', () => {

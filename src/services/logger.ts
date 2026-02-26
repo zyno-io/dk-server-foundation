@@ -220,9 +220,7 @@ export class ExtendedLogger extends Logger {
 export function createLogger(subject: string | InstanceType<ClassType>, defaultData?: LogData) {
     const name = typeof subject === 'string' ? subject : subject.constructor.name;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return r<ExtendedLogger>(Logger as any)
-        .scoped(name)
-        .setScopeData(defaultData);
+    return r<ExtendedLogger>(Logger as any).scoped(name, defaultData);
 }
 
 export function withLoggerContext<T>(data: LogData, fn: () => Promise<T>): Promise<T> {
