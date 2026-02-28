@@ -4,5 +4,5 @@
         "declaration": false,
         "declarationMap": false
     },
-    "include": ["src/**/*", "demoapp/**/*", "types.d.ts"]
+    "include": ["src/**/*", "devconsole-demo/**/*", "types.d.ts"]
 }

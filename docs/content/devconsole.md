@@ -143,7 +143,7 @@ In development, the frontend can be run standalone with `cd devconsole && npm ru
 A demo application is included to showcase all DevConsole features:
 
 ```bash
-yarn demoapp
+yarn devconsole-demo
 ```
 
 This starts a server at `http://localhost:3000` with auto-generated HTTP traffic, SRPC client/server chatter, worker jobs, and mutex contention. Open `http://localhost:3000/_devconsole/` to see it all in action.

@@ -102,7 +102,7 @@ To update the DevConsole screenshots used in the documentation:
 1. In one terminal, start the demo app:
 
     ```bash
-    yarn demoapp
+    yarn devconsole-demo
     ```
 
 2. Wait for the server to start (you'll see "Server started" message)

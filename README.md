@@ -429,7 +429,7 @@ DevConsole is localhost-only and communicates over SRPC/WebSocket for real-time 
 A demo app showcasing all features is included:
 
 ```bash
-yarn demoapp
+yarn devconsole-demo
 # then open http://localhost:3000/_devconsole/
 ```
 

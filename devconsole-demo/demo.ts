@@ -500,7 +500,7 @@ app.listen(onServerMainBootstrapDone, async () => {
     setTimeout(() => mutexGen.start(), 1500);
 
     console.log('\n╔══════════════════════════════════════════════════╗');
-    console.log('║  dk-server-foundation Demo App                   ║');
+    console.log('║  dk-server-foundation DevConsole Demo             ║');
     console.log('║                                                  ║');
     console.log('║  DevConsole:  http://localhost:3000/_devconsole/  ║');
     console.log('║  API:         http://localhost:3000/api/hello     ║');

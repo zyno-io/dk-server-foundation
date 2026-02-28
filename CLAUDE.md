@@ -50,7 +50,7 @@ yarn format
 yarn testapp
 
 # Run the demo app (showcases DevConsole features)
-yarn demoapp
+yarn devconsole-demo
 ```
 
 ## Architecture Overview
@@ -156,7 +156,7 @@ See `docs/content/cli.md` for full details.
 When `APP_ENV !== 'production'`:
 
 - **DevConsole**: Built-in web dashboard at `/_devconsole/`. See `docs/content/devconsole.md` for full details. Frontend is a Vue 3 SPA in `devconsole/` that builds to `dist/devconsole/`. Server-side code lives in `src/devconsole/` — `patches.ts` monkey-patches core components to intercept events; `devconsole.store.ts` holds ring buffers; `devconsole.ws.ts` is the SRPC server; `devconsole.controller.ts` serves static assets. Proto definitions are in `resources/proto/devconsole.proto` — run `yarn gen:proto` after changes.
-- **Demo App**: `yarn demoapp` runs a demo app with auto-generated traffic to showcase all DevConsole features
+- **Demo App**: `yarn devconsole-demo` runs a demo app with auto-generated traffic to showcase all DevConsole features
 - Set `ENABLE_OPENAPI_SCHEMA` to also dump the schema to `openapi.yaml` on disk
 - Lower MySQL/PostgreSQL connection pool limits (5 vs 10)
 - Shorter idle timeouts

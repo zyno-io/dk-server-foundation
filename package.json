@@ -27,7 +27,7 @@
         "postinstall": "dksf-install || yarn postinstall:alt",
         "postinstall:alt": "patch-package && deepkit-type-install",
         "testapp": "yarn clean && tsc -p tsconfig.testapp.json && node dist/testapp/bootstrap server:start",
-        "demoapp": "yarn build:devconsole && dksf-dev run -p tsconfig.demoapp.json dist/demoapp/bootstrap",
+        "devconsole-demo": "yarn build:devconsole && dksf-dev run -p tsconfig.devconsole-demo.json dist/devconsole-demo/bootstrap",
         "gen:proto": "ts-node src/cli/dksf-gen-proto.ts resources/proto/test.proto resources/proto/generated/test && ts-node src/cli/dksf-gen-proto.ts resources/proto/devconsole.proto resources/proto/generated/devconsole"
     },
     "author": {

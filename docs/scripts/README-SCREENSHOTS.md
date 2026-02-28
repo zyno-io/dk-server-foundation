@@ -22,10 +22,10 @@ This directory contains a script to capture DevConsole screenshots for documenta
 
 ### Step 1: Start the Demo Application
 
-In one terminal window, start the demoapp:
+In one terminal window, start the devconsole-demo:
 
 ```bash
-yarn demoapp
+yarn devconsole-demo
 ```
 
 Wait for the output to show:
@@ -84,9 +84,9 @@ The script captures all DevConsole views in navigation order:
 
 ### "Connection refused" or "Navigation timeout"
 
-Make sure the demoapp is running:
+Make sure the devconsole-demo is running:
 ```bash
-yarn demoapp
+yarn devconsole-demo
 ```
 
 Check that you can access http://localhost:3000/_devconsole in your browser.

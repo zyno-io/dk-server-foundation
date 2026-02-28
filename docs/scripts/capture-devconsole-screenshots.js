@@ -10,7 +10,7 @@
  * Prerequisites:
  * 1. Install dependencies: cd docs && yarn install
  * 2. Install browsers: cd docs && npx playwright install chromium
- * 3. Start the demoapp: yarn demoapp
+ * 3. Start the devconsole-demo: yarn devconsole-demo
  * 4. Wait for the server to be ready (check console output)
  *
  * Usage:
