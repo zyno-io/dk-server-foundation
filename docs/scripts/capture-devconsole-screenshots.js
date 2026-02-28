@@ -49,6 +49,7 @@ const views = [
     { name: 'Requests', path: '#/requests', filename: '04-requests.png', action: 'clickFirst' },
     { name: 'SRPC', path: '#/srpc', filename: '05-srpc.png', action: 'clickFirstThenMessage' },
     { name: 'Database', path: '#/database?table=notes', filename: '06-database.png', action: 'clickNotes' },
+    { name: 'Database Log', path: '#/database-log', filename: '06b-database-log.png', action: 'clickFirst' },
     { name: 'Health', path: '#/health', filename: '07-health.png' },
     { name: 'Mutex', path: '#/mutex', filename: '08-mutex.png' },
     { name: 'REPL', path: '#/repl', filename: '09-repl.png' },
