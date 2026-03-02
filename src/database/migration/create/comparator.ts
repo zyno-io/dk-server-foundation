@@ -269,7 +269,7 @@ function defaultsMatch(a: ColumnSchema, b: ColumnSchema): boolean {
     if (a.autoIncrement || b.autoIncrement) return true;
 
     // If entity side has no default info at all, treat as "unspecified" and skip comparison.
-    // The entity reader does not populate default values from Deepkit metadata.
+    // Columns without field initializers have no default info and are skipped to avoid spurious diffs.
     if (a.defaultValue === undefined && a.defaultExpression === undefined) return true;
 
     // Both have expression defaults

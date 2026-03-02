@@ -41,6 +41,16 @@ function readTableSchema(reflection: ReflectionClass<unknown>, tableName: string
     const pkColumns: string[] = [];
     const skippedColumns = new Set<string>();
 
+    // Create a default instance to detect field initializer values
+    let defaultInstance: Record<string, unknown> | undefined;
+    try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const classType = (reflection as any).getClassType?.() ?? (reflection.type as any)?.classType;
+        if (classType) defaultInstance = new classType();
+    } catch {
+        /* constructor requires args or has side effects */
+    }
+
     const properties = reflection.getProperties();
     let ordinal = 0;
 
@@ -63,7 +73,7 @@ function readTableSchema(reflection: ReflectionClass<unknown>, tableName: string
             continue;
         }
 
-        const col = readColumn(prop, ++ordinal, dialect, tableName);
+        const col = readColumn(prop, ++ordinal, dialect, tableName, defaultInstance);
         if (col) {
             columns.push(col);
             if (col.isPrimaryKey) pkColumns.push(col.name);
@@ -95,7 +105,13 @@ function readTableSchema(reflection: ReflectionClass<unknown>, tableName: string
     return { name: tableName, columns, indexes, foreignKeys, skippedColumns };
 }
 
-function readColumn(prop: ReflectionProperty, ordinal: number, dialect: Dialect, tableName?: string): ColumnSchema | null {
+function readColumn(
+    prop: ReflectionProperty,
+    ordinal: number,
+    dialect: Dialect,
+    tableName?: string,
+    defaultInstance?: Record<string, unknown>
+): ColumnSchema | null {
     const type = prop.type;
     const resolved = resolveColumnType(type, prop.name, dialect, tableName);
     if (!resolved) return null;
@@ -115,6 +131,22 @@ function readColumn(prop: ReflectionProperty, ordinal: number, dialect: Dialect,
         enumTypeName: resolved.enumTypeName,
         ordinalPosition: ordinal
     };
+
+    // Extract defaults from field initializers
+    if (defaultInstance && !col.autoIncrement) {
+        const val = defaultInstance[prop.name];
+        if (val !== undefined && val !== null) {
+            if (val instanceof Date) {
+                col.defaultExpression = 'CURRENT_TIMESTAMP';
+            } else if (typeof val === 'boolean') {
+                col.defaultValue = dialect === 'mysql' ? (val ? '1' : '0') : val ? 'true' : 'false';
+            } else if (typeof val === 'number') {
+                col.defaultValue = String(val);
+            } else if (typeof val === 'string') {
+                col.defaultValue = val;
+            }
+        }
+    }
 
     // ON UPDATE expression (MySQL only)
     if (dialect === 'mysql') {

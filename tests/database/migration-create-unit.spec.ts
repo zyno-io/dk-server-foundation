@@ -947,6 +947,10 @@ describe('ddl-generator', () => {
             const stmts = ddl(diff);
 
             assert.ok(stmts.some(s => s.includes("CREATE TYPE \"users_role\" AS ENUM ('admin', 'user')")));
+            assert.ok(
+                stmts.some(s => s.includes('CREATE CAST (text AS "users_role") WITH INOUT AS IMPLICIT')),
+                'Should emit CREATE CAST for enum type'
+            );
         });
 
         it('should generate ALTER TYPE ADD VALUE', async () => {
@@ -1219,10 +1223,13 @@ describe('ddl-generator', () => {
 
             // Should CREATE TYPE before ALTER COLUMN TYPE
             const createTypeIdx = stmts.findIndex(s => s.includes('CREATE TYPE "users_status"'));
+            const createCastIdx = stmts.findIndex(s => s.includes('CREATE CAST') && s.includes('"users_status"'));
             const alterColumnIdx = stmts.findIndex(s => s.includes('ALTER COLUMN "status" TYPE'));
             assert.ok(createTypeIdx >= 0, 'Should generate CREATE TYPE');
+            assert.ok(createCastIdx >= 0, 'Should generate CREATE CAST');
             assert.ok(alterColumnIdx >= 0, 'Should generate ALTER COLUMN TYPE');
             assert.ok(createTypeIdx < alterColumnIdx, 'CREATE TYPE should come before ALTER COLUMN TYPE');
+            assert.ok(createCastIdx < alterColumnIdx, 'CREATE CAST should come before ALTER COLUMN TYPE');
         });
 
         it('should include USING cast when converting to enum type', async () => {
@@ -1356,6 +1363,9 @@ describe('ddl-generator', () => {
             const stmts = ddl(diff);
             const createTypes = stmts.filter(s => s.includes('CREATE TYPE "shared_status"'));
             assert.equal(createTypes.length, 1, 'Should only have one CREATE TYPE for shared_status');
+
+            const createCasts = stmts.filter(s => s.includes('CREATE CAST') && s.includes('"shared_status"'));
+            assert.equal(createCasts.length, 1, 'Should only have one CREATE CAST for shared_status');
         });
     });
 
@@ -1649,8 +1659,12 @@ describe('ddl-generator', () => {
 
             const stmts = ddl(diff);
             assert.ok(
-                stmts.some(s => s.includes('"myapp"."users_status"')),
+                stmts.some(s => s.includes('"myapp"."users_status"') && s.includes('CREATE TYPE')),
                 'CREATE TYPE should be schema-qualified'
+            );
+            assert.ok(
+                stmts.some(s => s.includes('CREATE CAST (text AS "myapp"."users_status") WITH INOUT AS IMPLICIT')),
+                'CREATE CAST should be schema-qualified'
             );
         });
     });
@@ -1692,6 +1706,11 @@ describe('ddl-generator', () => {
             assert.ok(
                 stmts.some(s => s.includes('CREATE TYPE "users_status_v2"')),
                 'Should create the new enum type: ' + JSON.stringify(stmts)
+            );
+            // Should CREATE CAST for the new enum type
+            assert.ok(
+                stmts.some(s => s.includes('CREATE CAST') && s.includes('"users_status_v2"')),
+                'Should create cast for new enum type'
             );
             // Should ALTER COLUMN TYPE with USING cast to the new type
             assert.ok(
@@ -3237,7 +3256,7 @@ describe('ddl-generator', () => {
 
             // Use non-interactive mode — renames won't be detected automatically
             // Manually construct the diff with the rename
-            const diff = await compareSchemas(entity, db, 'mysql', false);
+            const _diff = await compareSchemas(entity, db, 'mysql', false);
 
             // Since non-interactive, rename won't be detected; manually construct the diff for DDL test
             const manualDiff = {
@@ -3360,6 +3379,10 @@ describe('ddl-generator', () => {
             // Should CREATE the new type
             const createType = stmts.find(s => s.includes('CREATE TYPE') && s.includes('accounts_status'));
             assert.ok(createType, 'Should CREATE TYPE for new enum name: ' + stmts.join(' | '));
+
+            // Should CREATE CAST for the new type
+            const createCast = stmts.find(s => s.includes('CREATE CAST') && s.includes('accounts_status'));
+            assert.ok(createCast, 'Should CREATE CAST for new enum name: ' + stmts.join(' | '));
 
             // Should DROP the old type
             const dropType = stmts.find(s => s.includes('DROP TYPE') && s.includes('users_status'));
@@ -3751,6 +3774,10 @@ describe('bug fixes', () => {
             assert.ok(createTypeStmt, 'Should have a CREATE TYPE statement');
             assert.ok(createTypeStmt!.includes('IF NOT EXISTS'), 'CREATE TYPE should include IF NOT EXISTS guard: ' + createTypeStmt);
             assert.ok(createTypeStmt!.includes('DO $$'), 'Should use DO $$ block for conditional creation: ' + createTypeStmt);
+
+            const createCastStmt = stmts.find(s => s.includes('CREATE CAST') && s.includes('"user_status"'));
+            assert.ok(createCastStmt, 'Should emit CREATE CAST for enum type');
+            assert.ok(createCastStmt!.includes('WITH INOUT AS IMPLICIT'), 'CREATE CAST should use WITH INOUT AS IMPLICIT: ' + createCastStmt);
         });
 
         it('should include pg_namespace filter for non-public schema', () => {
@@ -3775,6 +3802,10 @@ describe('bug fixes', () => {
                 createTypeStmt!.includes('pg_namespace') && createTypeStmt!.includes("nspname = 'tenant'"),
                 'IF NOT EXISTS guard should filter by pg_namespace for non-public schema: ' + createTypeStmt
             );
+
+            const createCastStmt = stmts.find(s => s.includes('CREATE CAST') && s.includes('user_status'));
+            assert.ok(createCastStmt, 'Should emit CREATE CAST for non-public schema');
+            assert.ok(createCastStmt!.includes('"tenant"."user_status"'), 'CREATE CAST should use schema-qualified type name: ' + createCastStmt);
         });
     });
 
@@ -3985,6 +4016,209 @@ describe('bug fixes', () => {
     });
 });
 
+describe('entity field initializer defaults', () => {
+    describe('DDL generation for columns with defaults', () => {
+        it('should generate DEFAULT for string default (MySQL)', async () => {
+            const entity = schema(
+                table('users', [
+                    col({ name: 'id', type: 'int', isPrimaryKey: true, autoIncrement: true, ordinalPosition: 1 }),
+                    col({ name: 'status', type: 'varchar', size: 255, ordinalPosition: 2, defaultValue: 'active' })
+                ])
+            );
+            const db = schema();
+            const diff = await compareSchemas(entity, db, 'mysql', false);
+            const stmts = ddl(diff);
+            const createStmt = stmts.find(s => s.includes('CREATE TABLE'));
+            assert.ok(createStmt, 'Should have CREATE TABLE statement');
+            assert.ok(createStmt!.includes("DEFAULT 'active'"), `Should have DEFAULT 'active', got: ${createStmt}`);
+        });
+
+        it('should generate DEFAULT for string default (PG)', async () => {
+            const entity = schema(
+                table('users', [
+                    col({ name: 'id', type: 'int', isPrimaryKey: true, autoIncrement: true, ordinalPosition: 1 }),
+                    col({ name: 'status', type: 'varchar', size: 255, ordinalPosition: 2, defaultValue: 'active' })
+                ])
+            );
+            const db = schema();
+            const diff = await compareSchemas(entity, db, 'postgres', false);
+            const stmts = ddl(diff);
+            const createStmt = stmts.find(s => s.includes('CREATE TABLE'));
+            assert.ok(createStmt, 'Should have CREATE TABLE statement');
+            assert.ok(createStmt!.includes("DEFAULT 'active'"), `Should have DEFAULT 'active', got: ${createStmt}`);
+        });
+
+        it('should generate DEFAULT for number default (MySQL)', async () => {
+            const entity = schema(
+                table('counters', [
+                    col({ name: 'id', type: 'int', isPrimaryKey: true, autoIncrement: true, ordinalPosition: 1 }),
+                    col({ name: 'count', type: 'int', ordinalPosition: 2, defaultValue: '0' })
+                ])
+            );
+            const db = schema();
+            const diff = await compareSchemas(entity, db, 'mysql', false);
+            const stmts = ddl(diff);
+            const createStmt = stmts.find(s => s.includes('CREATE TABLE'));
+            assert.ok(createStmt, 'Should have CREATE TABLE statement');
+            assert.ok(createStmt!.includes("DEFAULT '0'"), `Should have DEFAULT '0', got: ${createStmt}`);
+        });
+
+        it('should generate DEFAULT for boolean default (MySQL: 0/1)', async () => {
+            const entity = schema(
+                table('flags', [
+                    col({ name: 'id', type: 'int', isPrimaryKey: true, autoIncrement: true, ordinalPosition: 1 }),
+                    col({ name: 'active', type: 'tinyint', size: 1, ordinalPosition: 2, defaultValue: '0' })
+                ])
+            );
+            const db = schema();
+            const diff = await compareSchemas(entity, db, 'mysql', false);
+            const stmts = ddl(diff);
+            const createStmt = stmts.find(s => s.includes('CREATE TABLE'));
+            assert.ok(createStmt, 'Should have CREATE TABLE statement');
+            assert.ok(createStmt!.includes("DEFAULT '0'"), `Should have DEFAULT '0', got: ${createStmt}`);
+        });
+
+        it('should generate DEFAULT for boolean default (PG: true/false)', async () => {
+            const entity = schema(
+                table('flags', [
+                    col({ name: 'id', type: 'int', isPrimaryKey: true, autoIncrement: true, ordinalPosition: 1 }),
+                    col({ name: 'active', type: 'boolean', ordinalPosition: 2, defaultValue: 'false' })
+                ])
+            );
+            const db = schema();
+            const diff = await compareSchemas(entity, db, 'postgres', false);
+            const stmts = ddl(diff);
+            const createStmt = stmts.find(s => s.includes('CREATE TABLE'));
+            assert.ok(createStmt, 'Should have CREATE TABLE statement');
+            assert.ok(createStmt!.includes("DEFAULT 'false'"), `Should have DEFAULT 'false', got: ${createStmt}`);
+        });
+
+        it('should generate DEFAULT CURRENT_TIMESTAMP for Date default (MySQL)', async () => {
+            const entity = schema(
+                table('events', [
+                    col({ name: 'id', type: 'int', isPrimaryKey: true, autoIncrement: true, ordinalPosition: 1 }),
+                    col({ name: 'created_at', type: 'datetime', ordinalPosition: 2, defaultExpression: 'CURRENT_TIMESTAMP' })
+                ])
+            );
+            const db = schema();
+            const diff = await compareSchemas(entity, db, 'mysql', false);
+            const stmts = ddl(diff);
+            const createStmt = stmts.find(s => s.includes('CREATE TABLE'));
+            assert.ok(createStmt, 'Should have CREATE TABLE statement');
+            assert.ok(createStmt!.includes('DEFAULT CURRENT_TIMESTAMP'), `Should have DEFAULT CURRENT_TIMESTAMP, got: ${createStmt}`);
+        });
+
+        it('should generate DEFAULT CURRENT_TIMESTAMP for Date default (PG)', async () => {
+            const entity = schema(
+                table('events', [
+                    col({ name: 'id', type: 'int', isPrimaryKey: true, autoIncrement: true, ordinalPosition: 1 }),
+                    col({ name: 'created_at', type: 'timestamp', ordinalPosition: 2, defaultExpression: 'CURRENT_TIMESTAMP' })
+                ])
+            );
+            const db = schema();
+            const diff = await compareSchemas(entity, db, 'postgres', false);
+            const stmts = ddl(diff);
+            const createStmt = stmts.find(s => s.includes('CREATE TABLE'));
+            assert.ok(createStmt, 'Should have CREATE TABLE statement');
+            assert.ok(createStmt!.includes('DEFAULT CURRENT_TIMESTAMP'), `Should have DEFAULT CURRENT_TIMESTAMP, got: ${createStmt}`);
+        });
+    });
+
+    describe('comparator matching with field initializer defaults', () => {
+        it('should match when entity string default equals DB default', async () => {
+            const entity = schema(
+                table('users', [
+                    col({ name: 'id', type: 'int', isPrimaryKey: true, ordinalPosition: 1 }),
+                    col({ name: 'status', type: 'varchar', size: 255, ordinalPosition: 2, defaultValue: 'active' })
+                ])
+            );
+            const db = schema(
+                table('users', [
+                    col({ name: 'id', type: 'int', isPrimaryKey: true, ordinalPosition: 1 }),
+                    col({ name: 'status', type: 'varchar', size: 255, ordinalPosition: 2, defaultValue: 'active' })
+                ])
+            );
+
+            const diff = await compareSchemas(entity, db, 'mysql', false);
+            assert.equal(diff.modifiedTables.length, 0, 'Should not detect diff when defaults match');
+        });
+
+        it('should match when entity boolean default equals DB default (MySQL)', async () => {
+            const entity = schema(
+                table('flags', [
+                    col({ name: 'id', type: 'int', isPrimaryKey: true, ordinalPosition: 1 }),
+                    col({ name: 'active', type: 'tinyint', size: 1, ordinalPosition: 2, defaultValue: '0' })
+                ])
+            );
+            const db = schema(
+                table('flags', [
+                    col({ name: 'id', type: 'int', isPrimaryKey: true, ordinalPosition: 1 }),
+                    col({ name: 'active', type: 'tinyint', size: 1, ordinalPosition: 2, defaultValue: '0' })
+                ])
+            );
+
+            const diff = await compareSchemas(entity, db, 'mysql', false);
+            assert.equal(diff.modifiedTables.length, 0, 'Should not detect diff when boolean defaults match');
+        });
+
+        it('should match when entity CURRENT_TIMESTAMP matches DB now()', async () => {
+            const entity = schema(
+                table('events', [
+                    col({ name: 'id', type: 'int', isPrimaryKey: true, ordinalPosition: 1 }),
+                    col({ name: 'created_at', type: 'timestamp', ordinalPosition: 2, defaultExpression: 'CURRENT_TIMESTAMP' })
+                ])
+            );
+            const db = schema(
+                table('events', [
+                    col({ name: 'id', type: 'int', isPrimaryKey: true, ordinalPosition: 1 }),
+                    col({ name: 'created_at', type: 'timestamp', ordinalPosition: 2, defaultExpression: 'now()' })
+                ])
+            );
+
+            const diff = await compareSchemas(entity, db, 'postgres', false);
+            assert.equal(diff.modifiedTables.length, 0, 'CURRENT_TIMESTAMP and now() should be equivalent');
+        });
+
+        it('should detect diff when entity default differs from DB default', async () => {
+            const entity = schema(
+                table('users', [
+                    col({ name: 'id', type: 'int', isPrimaryKey: true, ordinalPosition: 1 }),
+                    col({ name: 'status', type: 'varchar', size: 255, ordinalPosition: 2, defaultValue: 'active' })
+                ])
+            );
+            const db = schema(
+                table('users', [
+                    col({ name: 'id', type: 'int', isPrimaryKey: true, ordinalPosition: 1 }),
+                    col({ name: 'status', type: 'varchar', size: 255, ordinalPosition: 2, defaultValue: 'inactive' })
+                ])
+            );
+
+            const diff = await compareSchemas(entity, db, 'mysql', false);
+            assert.equal(diff.modifiedTables.length, 1, 'Should detect diff when defaults differ');
+            assert.equal(diff.modifiedTables[0].modifiedColumns.length, 1);
+            assert.ok(diff.modifiedTables[0].modifiedColumns[0].defaultChanged);
+        });
+
+        it('should skip comparison when entity has no default info (no field initializer)', async () => {
+            const entity = schema(
+                table('users', [
+                    col({ name: 'id', type: 'int', isPrimaryKey: true, ordinalPosition: 1 }),
+                    col({ name: 'status', type: 'varchar', size: 255, ordinalPosition: 2 })
+                ])
+            );
+            const db = schema(
+                table('users', [
+                    col({ name: 'id', type: 'int', isPrimaryKey: true, ordinalPosition: 1 }),
+                    col({ name: 'status', type: 'varchar', size: 255, ordinalPosition: 2, defaultValue: 'active' })
+                ])
+            );
+
+            const diff = await compareSchemas(entity, db, 'mysql', false);
+            assert.equal(diff.modifiedTables.length, 0, 'Should not detect diff when entity has no default info');
+        });
+    });
+});
+
 describe('buildFileContent', () => {
     it('should convert comment markers to // Table: comments', () => {
         const statements = [`${COMMENT_PREFIX}users`, 'CREATE TABLE `users` (id INT)'];
@@ -4026,12 +4260,16 @@ describe('buildFileContent', () => {
             'END IF;',
             'END $$'
         ].join('\n');
-        const statements = [`${COMMENT_PREFIX}items`, enumStmt];
+        const castStmt = 'CREATE CAST (text AS "my_enum") WITH INOUT AS IMPLICIT';
+        const statements = [`${COMMENT_PREFIX}items`, enumStmt, castStmt];
         const content = buildFileContent(statements);
 
         // Multi-line statements should use template literal with 8-space indent
         assert.ok(content.includes('await db.rawExecute(`'), 'Should use template literal');
         assert.ok(content.includes('        DO \\$\\$ BEGIN'), 'Should indent DO $$ BEGIN with 8 spaces');
         assert.ok(content.includes('        END \\$\\$'), 'Should indent END $$ with 8 spaces');
+
+        // CREATE CAST should be emitted as a normal single-line statement
+        assert.ok(content.includes('CREATE CAST'), 'Should include CREATE CAST statement');
     });
 });

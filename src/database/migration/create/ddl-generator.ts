@@ -24,7 +24,7 @@ export function generateDDL(diff: SchemaDiff): string[] {
                 if (col.type === 'enum' && col.enumTypeName && col.enumValues) {
                     if (!globalEnumTypes.has(col.enumTypeName)) {
                         globalEnumTypes.add(col.enumTypeName);
-                        statements.push(createEnumType(col.enumTypeName, col.enumValues, pgSchema));
+                        statements.push(...createEnumType(col.enumTypeName, col.enumValues, pgSchema));
                     }
                 }
             }
@@ -332,7 +332,7 @@ function generatePostgresTableDDL(diff: TableDiff, pgSchema?: string, globalEnum
     for (const enumType of diff.addedEnumTypes) {
         if (globalEnumTypes && globalEnumTypes.has(enumType.typeName)) continue;
         globalEnumTypes?.add(enumType.typeName);
-        stmts.push(createEnumType(enumType.typeName, enumType.values, pgSchema));
+        stmts.push(...createEnumType(enumType.typeName, enumType.values, pgSchema));
     }
 
     // 2. Enum modifications are handled globally in generateDDL() to deduplicate across tables
@@ -534,18 +534,21 @@ function validateFkAction(action: string, dialect: Dialect): string {
     return upper;
 }
 
-function createEnumType(typeName: string, values: string[], pgSchema?: string): string {
+function createEnumType(typeName: string, values: string[], pgSchema?: string): string[] {
     const qualifiedName = qType(typeName, pgSchema);
     const vals = values.map(v => `'${escapeStr(v)}'`).join(', ');
     const schemaFilter =
         pgSchema && pgSchema !== 'public' ? ` AND typnamespace = (SELECT oid FROM pg_namespace WHERE nspname = '${escapeStr(pgSchema)}')` : '';
     return [
-        `DO $$ BEGIN`,
-        `IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = '${escapeStr(typeName)}'${schemaFilter}) THEN`,
-        `    CREATE TYPE ${qualifiedName} AS ENUM (${vals});`,
-        `END IF;`,
-        `END $$`
-    ].join('\n');
+        [
+            `DO $$ BEGIN`,
+            `IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = '${escapeStr(typeName)}'${schemaFilter}) THEN`,
+            `    CREATE TYPE ${qualifiedName} AS ENUM (${vals});`,
+            `END IF;`,
+            `END $$`
+        ].join('\n'),
+        `CREATE CAST (text AS ${qualifiedName}) WITH INOUT AS IMPLICIT`
+    ];
 }
 
 // --- MySQL column definition ---

@@ -167,6 +167,8 @@ class User {
 }
 ```
 
+**Auto-detected defaults in migrations:** Fields with TypeScript initializers automatically get `DEFAULT` clauses in generated migration DDL. For example, `status: string = 'active'` produces `DEFAULT 'active'`, `count: number = 0` produces `DEFAULT '0'`, and `createdAt: Date = new Date()` produces `DEFAULT CURRENT_TIMESTAMP`. No annotation is needed for this — the migration system instantiates the entity class and reads the initial values.
+
 ## Utility Types
 
 ### Primitives
