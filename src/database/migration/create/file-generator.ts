@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, writeFileSync } from 'fs';
 import path from 'path';
 
 import { getSourceMigrationsDir } from '../helpers';
+import { COMMENT_PREFIX } from './ddl-generator';
 
 export function generateMigrationFile(statements: string[], description: string): string {
     const migrationsDir = getSourceMigrationsDir();
@@ -22,7 +23,21 @@ export function generateMigrationFile(statements: string[], description: string)
 }
 
 export function buildFileContent(statements: string[]): string {
-    const execLines = statements.map(formatStatement).join('\n');
+    const lines: string[] = [];
+    let hasGroup = false;
+
+    for (const stmt of statements) {
+        if (stmt.startsWith(COMMENT_PREFIX)) {
+            const tableName = stmt.slice(COMMENT_PREFIX.length);
+            if (hasGroup) lines.push('');
+            lines.push(`    // Table: ${tableName}`);
+            hasGroup = true;
+        } else {
+            lines.push(formatStatement(stmt));
+        }
+    }
+
+    const execLines = lines.join('\n');
     return `import { createMigration } from '@zyno-io/dk-server-foundation';\n\nexport default createMigration(async db => {\n${execLines}\n});\n`;
 }
 

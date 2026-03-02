@@ -1,9 +1,10 @@
 {
-    "arrowParens": "avoid",
-    "printWidth": 150,
-    "singleQuote": true,
     "tabWidth": 4,
+    "singleQuote": true,
+    "printWidth": 150,
+    "arrowParens": "avoid",
     "trailingComma": "none",
+    "ignorePatterns": ["build/**", "dist/**", ".yarn/**"],
     "overrides": [
         {
             "files": ["*.yaml", "*.yml"],

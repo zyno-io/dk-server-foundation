@@ -5,18 +5,20 @@ This directory contains a script to capture DevConsole screenshots for documenta
 ## Prerequisites
 
 1. **Install dependencies** (if not already done):
-   ```bash
-   cd docs && yarn install
-   ```
+
+    ```bash
+    cd docs && yarn install
+    ```
 
 2. **Install Playwright browsers**:
-   ```bash
-   cd docs && npx playwright install chromium
-   ```
+
+    ```bash
+    cd docs && npx playwright install chromium
+    ```
 
 3. **Ensure services are running**:
-   - MySQL server
-   - Redis server
+    - MySQL server
+    - Redis server
 
 ## Usage
 
@@ -29,6 +31,7 @@ yarn devconsole-demo
 ```
 
 Wait for the output to show:
+
 ```
 DevConsole:  http://localhost:3000/_devconsole/
 Server started.
@@ -43,6 +46,7 @@ yarn screenshots
 ```
 
 This will:
+
 - Open a Chromium browser (visible by default)
 - Navigate through all 10 DevConsole views in order
 - Wait for each page to load completely
@@ -85,15 +89,17 @@ The script captures all DevConsole views in navigation order:
 ### "Connection refused" or "Navigation timeout"
 
 Make sure the devconsole-demo is running:
+
 ```bash
 yarn devconsole-demo
 ```
 
-Check that you can access http://localhost:3000/_devconsole in your browser.
+Check that you can access http://localhost:3000/\_devconsole in your browser.
 
 ### Browser not found
 
 Install Playwright browsers:
+
 ```bash
 npx playwright install chromium
 ```
@@ -101,6 +107,7 @@ npx playwright install chromium
 ### Screenshots are blank or incomplete
 
 Increase the wait time:
+
 ```bash
 yarn screenshots --wait 8000
 ```
@@ -108,6 +115,7 @@ yarn screenshots --wait 8000
 ### MySQL or Redis connection errors
 
 Ensure MySQL and Redis services are running:
+
 ```bash
 # MySQL
 sudo service mysql start
@@ -123,10 +131,10 @@ After running the script, verify the screenshots:
 1. Open `docs/content/public/images/devconsole/` directory
 2. Check that all 10 PNG files exist
 3. Open each image to verify:
-   - Correct view is captured
-   - Page is fully loaded
-   - No loading spinners visible
-   - Content is clearly visible
+    - Correct view is captured
+    - Page is fully loaded
+    - No loading spinners visible
+    - Content is clearly visible
 
 ## Rebuilding Documentation
 

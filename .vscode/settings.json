@@ -3,8 +3,8 @@
         "source.fixAll.oxc": "explicit"
     },
     "editor.formatOnSave": true,
-    "editor.defaultFormatter": "esbenp.prettier-vscode",
-    "prettier.configPath": ".prettierrc.json",
+    "editor.defaultFormatter": "oxc.oxc-vscode",
+    "oxc.fmt.configPath": ".oxfmtrc.json",
     "search.exclude": {
         "dist": true,
         "generated": true,

@@ -55,12 +55,6 @@ export default defineConfig({
           { text: 'CLI Tools', link: '/cli' }
         ]
       },
-      {
-        text: 'Guides',
-        items: [
-          { text: 'Test Migration Guide', link: '/guides/test-migration-guide' }
-        ]
-      }
     ],
 
     socialLinks: [

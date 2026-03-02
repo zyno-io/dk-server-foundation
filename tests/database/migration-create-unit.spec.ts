@@ -2,12 +2,18 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { compareSchemas } from '../../src/database/migration/create/comparator';
-import { generateDDL } from '../../src/database/migration/create/ddl-generator';
+import { COMMENT_PREFIX, generateDDL } from '../../src/database/migration/create/ddl-generator';
+import { buildFileContent } from '../../src/database/migration/create/file-generator';
 import { setNonInteractive } from '../../src/database/migration/create/prompt';
 import { ColumnSchema, ColumnModification, DatabaseSchema, SchemaDiff, TableSchema } from '../../src/database/migration/create/schema-model';
 
 // Disable interactive prompts for all tests
 setNonInteractive(true);
+
+/** Wrapper that strips comment markers from DDL output for assertion simplicity */
+function ddl(diff: SchemaDiff): string[] {
+    return generateDDL(diff).filter(s => !s.startsWith(COMMENT_PREFIX));
+}
 
 // --- Helpers ---
 
@@ -633,7 +639,7 @@ describe('ddl-generator', () => {
                 false
             );
 
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
 
             assert.ok(stmts.length >= 1);
             const create = stmts[0];
@@ -658,7 +664,7 @@ describe('ddl-generator', () => {
                 false
             );
 
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
 
             assert.ok(stmts.some(s => s.includes('ADD COLUMN') && s.includes('`email`') && s.includes('VARCHAR(255)')));
         });
@@ -676,7 +682,7 @@ describe('ddl-generator', () => {
                 false
             );
 
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
 
             assert.ok(stmts.some(s => s.includes('DROP COLUMN') && s.includes('`legacy`')));
         });
@@ -699,7 +705,7 @@ describe('ddl-generator', () => {
                 false
             );
 
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
 
             assert.ok(stmts.some(s => s.includes('MODIFY COLUMN') && s.includes('`bio`') && s.includes('TEXT')));
         });
@@ -717,7 +723,7 @@ describe('ddl-generator', () => {
                 false
             );
 
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
             const create = stmts[0];
 
             assert.ok(create.includes("ENUM('active','inactive')"));
@@ -731,7 +737,7 @@ describe('ddl-generator', () => {
                 false
             );
 
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
 
             assert.ok(stmts.some(s => s.includes('DROP TABLE `old_table`')));
         });
@@ -755,7 +761,7 @@ describe('ddl-generator', () => {
                 false
             );
 
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
 
             assert.ok(stmts.some(s => s.includes('CREATE UNIQUE INDEX') && s.includes('`idx_email`')));
         });
@@ -773,7 +779,7 @@ describe('ddl-generator', () => {
                 false
             );
 
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
             const create = stmts[0];
 
             assert.ok(create.includes('TINYINT(1)'));
@@ -799,7 +805,7 @@ describe('ddl-generator', () => {
                 false
             );
 
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
 
             // Should emit MODIFY COLUMN with AFTER clause for reordering
             assert.ok(stmts.some(s => s.includes('MODIFY COLUMN') && s.includes('AFTER')));
@@ -829,7 +835,7 @@ describe('ddl-generator', () => {
                 false
             );
 
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
 
             assert.ok(stmts.some(s => s.includes('MODIFY COLUMN') && s.includes('ON UPDATE CURRENT_TIMESTAMP')));
         });
@@ -850,7 +856,7 @@ describe('ddl-generator', () => {
                 false
             );
 
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
 
             assert.ok(stmts.length >= 1);
             const create = stmts[0];
@@ -874,7 +880,7 @@ describe('ddl-generator', () => {
                 false
             );
 
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
 
             assert.ok(stmts.some(s => s.includes('ADD COLUMN') && s.includes('"email"') && s.includes('VARCHAR(255)')));
         });
@@ -897,7 +903,7 @@ describe('ddl-generator', () => {
                 false
             );
 
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
 
             assert.ok(stmts.some(s => s.includes('ALTER COLUMN "bio" TYPE TEXT')));
         });
@@ -920,7 +926,7 @@ describe('ddl-generator', () => {
                 false
             );
 
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
 
             assert.ok(stmts.some(s => s.includes('DROP NOT NULL')));
         });
@@ -938,7 +944,7 @@ describe('ddl-generator', () => {
                 false
             );
 
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
 
             assert.ok(stmts.some(s => s.includes("CREATE TYPE \"users_role\" AS ENUM ('admin', 'user')")));
         });
@@ -967,7 +973,7 @@ describe('ddl-generator', () => {
                 false
             );
 
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
 
             assert.ok(stmts.some(s => s.includes('ALTER TYPE "users_status" ADD VALUE \'banned\'')));
         });
@@ -1002,7 +1008,7 @@ describe('ddl-generator', () => {
                 false
             );
 
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
 
             // Should generate RENAME, CREATE, ALTER COLUMN TYPE, DROP for enum recreation
             assert.ok(stmts.some(s => s.includes('ALTER TYPE "users_status" RENAME TO "users_status_old"')));
@@ -1030,7 +1036,7 @@ describe('ddl-generator', () => {
                 false
             );
 
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
             const create = stmts[0];
 
             assert.ok(create.includes('JSONB'));
@@ -1044,7 +1050,7 @@ describe('ddl-generator', () => {
                 false
             );
 
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
             const create = stmts[0];
 
             assert.ok(create.includes('BIGSERIAL'));
@@ -1065,7 +1071,7 @@ describe('ddl-generator', () => {
             const db = schema(dbTable);
 
             const diff = await compareSchemas(entity, db, 'postgres', false);
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
 
             assert.ok(stmts.some(s => s.includes('DROP CONSTRAINT "users_pk_custom"')));
         });
@@ -1105,7 +1111,7 @@ describe('ddl-generator', () => {
                 false
             );
 
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
 
             assert.ok(stmts.some(s => s.includes('ADD CONSTRAINT') && s.includes('FOREIGN KEY') && s.includes('ON DELETE CASCADE')));
         });
@@ -1143,7 +1149,7 @@ describe('ddl-generator', () => {
                 false
             );
 
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
 
             assert.ok(stmts.some(s => s.includes('ADD CONSTRAINT') && s.includes('"fk_posts_user_id"') && s.includes('ON DELETE CASCADE')));
         });
@@ -1157,7 +1163,7 @@ describe('ddl-generator', () => {
             ]);
 
             const diff = await compareSchemas(schema(t), schema(t), 'mysql', false);
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
 
             assert.equal(stmts.length, 0);
         });
@@ -1183,7 +1189,7 @@ describe('ddl-generator', () => {
                 false
             );
 
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
             const addStmt = stmts.find(s => s.includes('ADD COLUMN') && s.includes('`email`'));
             assert.ok(addStmt);
             assert.ok(addStmt!.includes('AFTER `name`'));
@@ -1209,7 +1215,7 @@ describe('ddl-generator', () => {
                 false
             );
 
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
 
             // Should CREATE TYPE before ALTER COLUMN TYPE
             const createTypeIdx = stmts.findIndex(s => s.includes('CREATE TYPE "users_status"'));
@@ -1237,7 +1243,7 @@ describe('ddl-generator', () => {
                 false
             );
 
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
 
             const alterStmt = stmts.find(s => s.includes('ALTER COLUMN "status" TYPE'));
             assert.ok(alterStmt);
@@ -1321,7 +1327,7 @@ describe('ddl-generator', () => {
                 false
             );
 
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
             const fkStmt = stmts.find(s => s.includes('ADD CONSTRAINT') && s.includes('fk_composite'));
             assert.ok(fkStmt);
             assert.ok(fkStmt!.includes('"order_id", "product_id"'));
@@ -1347,7 +1353,7 @@ describe('ddl-generator', () => {
                 false
             );
 
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
             const createTypes = stmts.filter(s => s.includes('CREATE TYPE "shared_status"'));
             assert.equal(createTypes.length, 1, 'Should only have one CREATE TYPE for shared_status');
         });
@@ -1383,7 +1389,7 @@ describe('ddl-generator', () => {
                 false
             );
 
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
 
             const dropFkIdx = stmts.findIndex(s => s.includes('DROP CONSTRAINT') && s.includes('fk_posts_user'));
             const dropTableIdx = stmts.findIndex(s => s.includes('DROP TABLE') && s.includes('"posts"'));
@@ -1463,7 +1469,7 @@ describe('ddl-generator', () => {
                 false
             );
 
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
             assert.ok(stmts.some(s => s.includes('ON DELETE SET NULL') && s.includes('ON UPDATE NO ACTION')));
         });
     });
@@ -1512,7 +1518,7 @@ describe('ddl-generator', () => {
                 'myapp'
             );
 
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
             const idxStmt = stmts.find(s => s.includes('CREATE UNIQUE INDEX'));
             assert.ok(idxStmt);
             assert.ok(idxStmt!.includes('"myapp"."users"'), 'Index DDL should use schema-qualified table name');
@@ -1552,7 +1558,7 @@ describe('ddl-generator', () => {
                 'myapp'
             );
 
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
             const fkStmt = stmts.find(s => s.includes('ADD CONSTRAINT'));
             assert.ok(fkStmt);
             assert.ok(fkStmt!.includes('"myapp"."posts"'), 'FK DDL should use schema-qualified source table');
@@ -1575,7 +1581,7 @@ describe('ddl-generator', () => {
                 'myapp'
             );
 
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
             const create = stmts[0];
             assert.ok(create.includes('"myapp"."users"'), 'Should qualify table with schema name');
         });
@@ -1594,7 +1600,7 @@ describe('ddl-generator', () => {
                 'public'
             );
 
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
             const create = stmts[0];
             assert.ok(create.includes('CREATE TABLE "users"'), 'Should use unqualified name for public schema');
             assert.ok(!create.includes('"public"."users"'), 'Should not qualify with public schema');
@@ -1620,7 +1626,7 @@ describe('ddl-generator', () => {
                 'myapp'
             );
 
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
             assert.ok(
                 stmts.some(s => s.includes('DROP INDEX "myapp"."idx_email"')),
                 'DROP INDEX should be schema-qualified'
@@ -1641,7 +1647,7 @@ describe('ddl-generator', () => {
                 'myapp'
             );
 
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
             assert.ok(
                 stmts.some(s => s.includes('"myapp"."users_status"')),
                 'CREATE TYPE should be schema-qualified'
@@ -1680,7 +1686,7 @@ describe('ddl-generator', () => {
                 false
             );
 
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
 
             // Should CREATE TYPE for the new enum type name
             assert.ok(
@@ -1735,7 +1741,7 @@ describe('ddl-generator', () => {
             );
 
             const diff = await compareSchemas(schema(tableA, tableB), schema(), 'postgres', false);
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
 
             // All CREATE TABLE statements should come before any ADD CONSTRAINT FK statements
             const createTableIdxs = stmts.map((s, i) => (s.includes('CREATE TABLE') ? i : -1)).filter(i => i >= 0);
@@ -1845,7 +1851,7 @@ describe('ddl-generator', () => {
             assert.equal(diff.modifiedTables[0].primaryKeyChanged, true);
             assert.deepEqual(diff.modifiedTables[0].oldPrimaryKey, []);
 
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
             assert.ok(!stmts.some(s => s.includes('DROP PRIMARY KEY')), 'Should not DROP PRIMARY KEY when DB has none');
             assert.ok(
                 stmts.some(s => s.includes('ADD PRIMARY KEY')),
@@ -1862,7 +1868,7 @@ describe('ddl-generator', () => {
             );
 
             const diff = await compareSchemas(entity, db, 'postgres', false);
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
 
             assert.ok(!stmts.some(s => s.includes('DROP CONSTRAINT') && s.includes('pkey')), 'Should not DROP PK constraint when DB has none');
             assert.ok(
@@ -1886,7 +1892,7 @@ describe('ddl-generator', () => {
             );
 
             const diff = await compareSchemas(entity, db, 'mysql', false);
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
 
             assert.ok(
                 stmts.some(s => s.includes('DROP PRIMARY KEY')),
@@ -1905,7 +1911,7 @@ describe('ddl-generator', () => {
             const db = schema(table('users', [col({ name: 'id', type: 'int', isPrimaryKey: true, autoIncrement: false, ordinalPosition: 1 })]));
 
             const diff = await compareSchemas(entity, db, 'postgres', false);
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
 
             assert.ok(
                 stmts.some(s => s.includes('CREATE SEQUENCE') && s.includes('users_id_seq')),
@@ -1922,7 +1928,7 @@ describe('ddl-generator', () => {
             const db = schema(table('users', [col({ name: 'id', type: 'int', isPrimaryKey: true, autoIncrement: true, ordinalPosition: 1 })]));
 
             const diff = await compareSchemas(entity, db, 'postgres', false);
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
 
             assert.ok(
                 stmts.some(s => s.includes('DROP DEFAULT')),
@@ -1972,7 +1978,7 @@ describe('ddl-generator', () => {
             );
 
             const diff = await compareSchemas(entity, db, 'postgres', false);
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
 
             const addValueStmts = stmts.filter(s => s.includes("ADD VALUE 'banned'"));
             assert.equal(addValueStmts.length, 1, 'Should only emit ADD VALUE once for shared enum type');
@@ -2025,7 +2031,7 @@ describe('ddl-generator', () => {
             );
 
             const diff = await compareSchemas(entity, db, 'postgres', false);
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
 
             const renameStmts = stmts.filter(s => s.includes('RENAME TO'));
             assert.equal(renameStmts.length, 1, 'Should only RENAME once for shared enum');
@@ -2057,7 +2063,7 @@ describe('ddl-generator', () => {
                 false
             );
 
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
             const create = stmts[0];
             assert.ok(create.includes('DECIMAL'), 'Should include DECIMAL');
             assert.ok(!create.includes('DECIMAL('), 'Should not include DECIMAL( with parentheses');
@@ -2076,7 +2082,7 @@ describe('ddl-generator', () => {
                 false
             );
 
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
             const create = stmts[0];
             assert.ok(create.includes('NUMERIC'), 'Should include NUMERIC');
             assert.ok(!create.includes('NUMERIC('), 'Should not include NUMERIC( with parentheses');
@@ -2095,7 +2101,7 @@ describe('ddl-generator', () => {
                 false
             );
 
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
             const create = stmts[0];
             assert.ok(create.includes('DECIMAL(10,2)'), 'Should include DECIMAL(10,2)');
         });
@@ -2275,7 +2281,7 @@ describe('ddl-generator', () => {
                 false
             );
 
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
             const fkStmt = stmts.find(s => s.includes('FOREIGN KEY'));
             assert.ok(fkStmt, 'Should generate FK statement');
             assert.ok(fkStmt!.includes('ON DELETE SET DEFAULT'), 'Should include SET DEFAULT');
@@ -2373,7 +2379,7 @@ describe('ddl-generator', () => {
 
             // Use a schema name with a single quote to test escaping
             const diff = await compareSchemas(entity, db, 'postgres', false, "test'schema");
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
 
             const nextvalStmt = stmts.find(s => s.includes('nextval'));
             assert.ok(nextvalStmt, 'Should generate nextval statement');
@@ -2429,7 +2435,7 @@ describe('ddl-generator', () => {
                 ]
             };
 
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
 
             const renameStmt = stmts.find(s => s.includes('RENAME COLUMN'));
             assert.ok(renameStmt, 'Should emit RENAME COLUMN');
@@ -2484,7 +2490,7 @@ describe('ddl-generator', () => {
                 ]
             };
 
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
 
             assert.ok(
                 stmts.some(s => s.includes('RENAME COLUMN')),
@@ -2542,7 +2548,7 @@ describe('ddl-generator', () => {
                 ]
             };
 
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
 
             const changeStmts = stmts.filter(s => s.includes('CHANGE COLUMN'));
             assert.equal(changeStmts.length, 1, 'Should emit exactly one CHANGE COLUMN');
@@ -2558,7 +2564,7 @@ describe('ddl-generator', () => {
             const db = schema(table('users', [col({ name: 'id', type: 'int', isPrimaryKey: true, autoIncrement: false, ordinalPosition: 1 })]));
 
             const diff = await compareSchemas(entity, db, 'postgres', false);
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
 
             assert.ok(
                 stmts.some(s => s.includes('CREATE SEQUENCE')),
@@ -2580,7 +2586,7 @@ describe('ddl-generator', () => {
             const db = schema(table('items', [col({ name: 'id', type: 'bigint', isPrimaryKey: true, autoIncrement: false, ordinalPosition: 1 })]));
 
             const diff = await compareSchemas(entity, db, 'postgres', false, 'myapp');
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
 
             const nextvalStmt = stmts.find(s => s.includes('nextval'));
             assert.ok(nextvalStmt, 'Should generate nextval');
@@ -2608,7 +2614,7 @@ describe('ddl-generator', () => {
                 false
             );
 
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
             const create = stmts[0];
             assert.ok(create.includes('C:\\\\Users'), 'Should double backslashes in MySQL enum values');
         });
@@ -2626,7 +2632,7 @@ describe('ddl-generator', () => {
                 modifiedTables: []
             };
 
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
             const create = stmts[0];
             assert.ok(create.includes('C:\\\\temp'), 'Should double backslashes in MySQL default values');
         });
@@ -2650,7 +2656,7 @@ describe('ddl-generator', () => {
                 false
             );
 
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
             // PG enum CREATE TYPE should have single backslash (not doubled)
             const createType = stmts.find(s => s.includes('CREATE TYPE'));
             assert.ok(createType, 'Should create enum type');
@@ -2725,7 +2731,7 @@ describe('ddl-generator', () => {
                 entityEnumTypes: new Set(['shared_status'])
             };
 
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
 
             const dropTableIdx = stmts.findIndex(s => s.includes('DROP TABLE'));
             // Find the LAST DROP TYPE for shared_status_old (the deferred cleanup drop, not the pre-rename collision avoidance drop)
@@ -2788,7 +2794,7 @@ describe('ddl-generator', () => {
             );
 
             const diff = await compareSchemas(entity, db, 'mysql', false);
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
 
             // Should have a MODIFY COLUMN to remove AUTO_INCREMENT BEFORE DROP PRIMARY KEY
             const removeAIIdx = stmts.findIndex(s => s.includes('MODIFY COLUMN') && s.includes('`id`') && !s.includes('AUTO_INCREMENT'));
@@ -2817,7 +2823,7 @@ describe('ddl-generator', () => {
             );
 
             const diff = await compareSchemas(entity, db, 'mysql', false);
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
 
             // Should NOT have a pre-PK-drop MODIFY for AUTO_INCREMENT
             const dropPKIdx = stmts.findIndex(s => s.includes('DROP PRIMARY KEY'));
@@ -2878,7 +2884,7 @@ describe('ddl-generator', () => {
                 ]
             };
 
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
 
             // Only a CHANGE COLUMN should be emitted; no DROP/ADD PRIMARY KEY
             assert.ok(!stmts.some(s => s.includes('DROP PRIMARY KEY')), 'Should NOT drop PK for rename-only');
@@ -2947,7 +2953,7 @@ describe('ddl-generator', () => {
                 ]
             };
 
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
 
             const changeStmt = stmts.find(s => s.includes('CHANGE COLUMN'));
             assert.ok(changeStmt, 'Should emit CHANGE COLUMN');
@@ -2964,7 +2970,7 @@ describe('ddl-generator', () => {
             const db = schema(table('users', [col({ name: 'id', type: 'int', isPrimaryKey: true, autoIncrement: false, ordinalPosition: 1 })]));
 
             const diff = await compareSchemas(entity, db, 'postgres', false);
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
 
             const setvalStmt = stmts.find(s => s.includes('setval'));
             assert.ok(setvalStmt, 'Should emit setval');
@@ -3072,7 +3078,7 @@ describe('ddl-generator', () => {
             );
 
             const diff = await compareSchemas(entity, db, 'mysql', false);
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
 
             // Should emit MODIFY COLUMN to strip AUTO_INCREMENT before DROP PRIMARY KEY
             const modifyIdx = stmts.findIndex(s => s.includes('MODIFY COLUMN') && s.includes('`old_id`') && !s.includes('AUTO_INCREMENT'));
@@ -3103,7 +3109,7 @@ describe('ddl-generator', () => {
             );
 
             const diff = await compareSchemas(entity, db, 'mysql', false);
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
 
             const addPKIdx = stmts.findIndex(s => s.includes('ADD PRIMARY KEY'));
             const autoIncIdx = stmts.findIndex(s => s.includes('MODIFY COLUMN') && s.includes('`id`') && s.includes('AUTO_INCREMENT'));
@@ -3124,7 +3130,7 @@ describe('ddl-generator', () => {
             const db = schema(table('users', [col({ name: 'name', type: 'varchar', size: 255, isPrimaryKey: true, ordinalPosition: 1 })]));
 
             const diff = await compareSchemas(entity, db, 'mysql', false);
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
 
             // ADD COLUMN should NOT include AUTO_INCREMENT (it would fail before PK exists)
             const addColStmt = stmts.find(s => s.includes('ADD COLUMN') && s.includes('`id`'));
@@ -3149,7 +3155,7 @@ describe('ddl-generator', () => {
             );
 
             const diff = await compareSchemas(entity, db, 'postgres', false);
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
 
             const dropIdentity = stmts.find(s => s.includes('DROP IDENTITY'));
             assert.ok(dropIdentity, 'Should emit DROP IDENTITY for identity column: ' + stmts.join(' | '));
@@ -3163,7 +3169,7 @@ describe('ddl-generator', () => {
             const db = schema(table('users', [col({ name: 'id', type: 'int', isPrimaryKey: true, autoIncrement: true, ordinalPosition: 1 })]));
 
             const diff = await compareSchemas(entity, db, 'postgres', false);
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
 
             const dropDefault = stmts.find(s => s.includes('DROP DEFAULT'));
             const dropSeq = stmts.find(s => s.includes('DROP SEQUENCE'));
@@ -3192,7 +3198,7 @@ describe('ddl-generator', () => {
             );
 
             const diff = await compareSchemas(entity, db, 'mysql', false);
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
 
             // Should strip AUTO_INCREMENT before DROP PRIMARY KEY
             const stripIdx = stmts.findIndex(s => s.includes('MODIFY COLUMN') && s.includes('`id`') && !s.includes('AUTO_INCREMENT'));
@@ -3270,7 +3276,7 @@ describe('ddl-generator', () => {
                 ]
             };
 
-            const stmts = generateDDL(manualDiff);
+            const stmts = ddl(manualDiff);
 
             // The strip should reference `old_id` (current DB name), not `new_id`
             const stripStmt = stmts.find(s => s.includes('MODIFY COLUMN') && s.includes('`old_id`') && !s.includes('AUTO_INCREMENT'));
@@ -3301,7 +3307,7 @@ describe('ddl-generator', () => {
             );
 
             const diff = await compareSchemas(entity, db, 'mysql', false);
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
 
             // The final MODIFY with AUTO_INCREMENT and BIGINT should come AFTER ADD PRIMARY KEY
             const addPKIdx = stmts.findIndex(s => s.includes('ADD PRIMARY KEY'));
@@ -3349,7 +3355,7 @@ describe('ddl-generator', () => {
             );
 
             const diff = await compareSchemas(entity, db, 'postgres', false);
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
 
             // Should CREATE the new type
             const createType = stmts.find(s => s.includes('CREATE TYPE') && s.includes('accounts_status'));
@@ -3377,7 +3383,7 @@ describe('ddl-generator', () => {
             );
 
             const diff = await compareSchemas(entity, db, 'postgres', false);
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
 
             // Should DROP the orphaned enum type
             const dropType = stmts.find(s => s.includes('DROP TYPE') && s.includes('users_status'));
@@ -3404,7 +3410,7 @@ describe('ddl-generator', () => {
             );
 
             const diff = await compareSchemas(entity, db, 'postgres', false);
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
 
             // Should DROP TABLE
             const dropTable = stmts.find(s => s.includes('DROP TABLE'));
@@ -3455,7 +3461,7 @@ describe('ddl-generator', () => {
                 ]
             };
 
-            const stmts = generateDDL(manualDiff);
+            const stmts = ddl(manualDiff);
 
             // CHANGE COLUMN should NOT include AUTO_INCREMENT (deferred)
             const changeColStmt = stmts.find(s => s.includes('CHANGE COLUMN'));
@@ -3532,7 +3538,7 @@ describe('ddl-generator', () => {
                 ]
             };
 
-            const stmts = generateDDL(manualDiff);
+            const stmts = ddl(manualDiff);
 
             // Should drop default before TYPE change
             const dropDefaultIdx = stmts.findIndex(s => s.includes('DROP DEFAULT'));
@@ -3584,7 +3590,7 @@ describe('ddl-generator', () => {
                 ]
             };
 
-            const stmts = generateDDL(manualDiff);
+            const stmts = ddl(manualDiff);
 
             // Should have DROP TYPE IF EXISTS before ALTER TYPE RENAME
             const preDropIdx = stmts.findIndex(s => s.includes('DROP TYPE IF EXISTS') && s.includes('users_status_old'));
@@ -3668,7 +3674,7 @@ describe('bug fixes', () => {
             );
 
             const diff = await compareSchemas(entitySch, dbSch, 'postgres', false, 'public');
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
 
             // Should NOT contain DROP TYPE for status_enum since users table still uses it
             const dropEnum = stmts.find(s => s.includes('DROP TYPE') && s.includes('status_enum') && !s.includes('_old'));
@@ -3686,7 +3692,7 @@ describe('bug fixes', () => {
             );
 
             const diff = await compareSchemas(entitySch, dbSch, 'postgres', false, 'public');
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
 
             const dropEnum = stmts.find(s => s.includes('DROP TYPE IF EXISTS') && s.includes('orders_status_enum'));
             assert.ok(dropEnum, 'Should drop orders_status_enum when no table uses it: ' + stmts.join(' | '));
@@ -3717,7 +3723,7 @@ describe('bug fixes', () => {
             // users should NOT appear in modifiedTables — it's unchanged
             assert.ok(!diff.modifiedTables.find(t => t.tableName === 'users'), 'users should not be in modifiedTables');
 
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
 
             // But entityEnumTypes should still protect status_enum from being dropped
             const dropEnum = stmts.find(s => s.includes('DROP TYPE') && s.includes('status_enum'));
@@ -3739,7 +3745,7 @@ describe('bug fixes', () => {
                 modifiedTables: []
             };
 
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
 
             const createTypeStmt = stmts.find(s => s.includes('user_status') && s.includes('ENUM'));
             assert.ok(createTypeStmt, 'Should have a CREATE TYPE statement');
@@ -3761,7 +3767,7 @@ describe('bug fixes', () => {
                 modifiedTables: []
             };
 
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
 
             const createTypeStmt = stmts.find(s => s.includes('user_status') && s.includes('ENUM'));
             assert.ok(createTypeStmt, 'Should have a CREATE TYPE statement');
@@ -3842,7 +3848,7 @@ describe('bug fixes', () => {
                 ]
             };
 
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
 
             const dropSeq = stmts.find(s => s.includes('DROP SEQUENCE'));
             assert.ok(dropSeq, 'Should have a DROP SEQUENCE statement: ' + stmts.join(' | '));
@@ -3886,7 +3892,7 @@ describe('bug fixes', () => {
                 ]
             };
 
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
 
             const dropSeq = stmts.find(s => s.includes('DROP SEQUENCE'));
             assert.ok(dropSeq, 'Should have a DROP SEQUENCE statement: ' + stmts.join(' | '));
@@ -3908,7 +3914,7 @@ describe('bug fixes', () => {
                 modifiedTables: []
             };
 
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
             const createStmt = stmts.find(s => s.includes('CREATE TABLE'));
             assert.ok(createStmt, 'Should emit CREATE TABLE');
             assert.ok(createStmt!.includes('BINARY(16)'), 'Should use BINARY(16) for binary column: ' + createStmt);
@@ -3927,7 +3933,7 @@ describe('bug fixes', () => {
                 modifiedTables: []
             };
 
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
             const createStmt = stmts.find(s => s.includes('CREATE TABLE'));
             assert.ok(createStmt, 'Should emit CREATE TABLE');
             assert.ok(createStmt!.includes('UUID'), 'Should use UUID for uuid column: ' + createStmt);
@@ -3941,7 +3947,7 @@ describe('bug fixes', () => {
                 modifiedTables: []
             };
 
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
             const createStmt = stmts.find(s => s.includes('CREATE TABLE'));
             assert.ok(createStmt, 'Should emit CREATE TABLE');
             assert.ok(createStmt!.includes('CHAR(36)'), 'Should use CHAR(36) for UuidString column: ' + createStmt);
@@ -3955,7 +3961,7 @@ describe('bug fixes', () => {
                 modifiedTables: []
             };
 
-            const stmts = generateDDL(diff);
+            const stmts = ddl(diff);
             const createStmt = stmts.find(s => s.includes('CREATE TABLE'));
             assert.ok(createStmt, 'Should emit CREATE TABLE');
             assert.ok(createStmt!.includes('CHAR(36)'), 'Should use CHAR(36) for UuidString column: ' + createStmt);
@@ -3976,5 +3982,56 @@ describe('bug fixes', () => {
             const diff = await compareSchemas(entity, db, 'postgres', false);
             assert.equal(diff.modifiedTables.length, 0, 'Matching uuid columns should not produce a diff');
         });
+    });
+});
+
+describe('buildFileContent', () => {
+    it('should convert comment markers to // Table: comments', () => {
+        const statements = [`${COMMENT_PREFIX}users`, 'CREATE TABLE `users` (id INT)'];
+        const content = buildFileContent(statements);
+        assert.ok(content.includes('// Table: users'), 'Should contain table comment');
+        assert.ok(content.includes('await db.rawExecute(`CREATE TABLE'), 'Should contain SQL statement');
+    });
+
+    it('should separate table groups with blank lines', () => {
+        const statements = [`${COMMENT_PREFIX}users`, 'CREATE TABLE `users` (id INT)', `${COMMENT_PREFIX}posts`, 'CREATE TABLE `posts` (id INT)'];
+        const content = buildFileContent(statements);
+        const lines = content.split('\n');
+
+        // Find the indices of the two table comments
+        const usersIdx = lines.findIndex(l => l.includes('// Table: users'));
+        const postsIdx = lines.findIndex(l => l.includes('// Table: posts'));
+        assert.ok(usersIdx >= 0, 'Should have users comment');
+        assert.ok(postsIdx >= 0, 'Should have posts comment');
+        // The line before the second table comment should be blank
+        assert.equal(lines[postsIdx - 1].trim(), '', 'Should have blank line before second table group');
+    });
+
+    it('should not add blank line before first table group', () => {
+        const statements = [`${COMMENT_PREFIX}users`, 'CREATE TABLE `users` (id INT)'];
+        const content = buildFileContent(statements);
+        const lines = content.split('\n');
+
+        const usersIdx = lines.findIndex(l => l.includes('// Table: users'));
+        // The line before should be the opening of createMigration, not blank
+        assert.ok(usersIdx >= 0);
+        assert.ok(lines[usersIdx - 1].trim() !== '', 'First table group should not have leading blank line');
+    });
+
+    it('should properly indent multi-line PG enum DO $$ block', () => {
+        const enumStmt = [
+            'DO $$ BEGIN',
+            "IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'my_enum') THEN",
+            `    CREATE TYPE "my_enum" AS ENUM ('a', 'b');`,
+            'END IF;',
+            'END $$'
+        ].join('\n');
+        const statements = [`${COMMENT_PREFIX}items`, enumStmt];
+        const content = buildFileContent(statements);
+
+        // Multi-line statements should use template literal with 8-space indent
+        assert.ok(content.includes('await db.rawExecute(`'), 'Should use template literal');
+        assert.ok(content.includes('        DO \\$\\$ BEGIN'), 'Should indent DO $$ BEGIN with 8 spaces');
+        assert.ok(content.includes('        END \\$\\$'), 'Should indent END $$ with 8 spaces');
     });
 });

@@ -1,6 +1,6 @@
 {
-    "private": true,
     "name": "dk-server-foundation-devconsole",
+    "private": true,
     "scripts": {
         "dev": "vite",
         "build": "vite build"

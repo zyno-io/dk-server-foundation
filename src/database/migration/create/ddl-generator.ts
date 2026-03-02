@@ -3,6 +3,8 @@ import { ColumnModification, ColumnSchema, Dialect, ForeignKeySchema, IndexSchem
 
 const VALID_FK_ACTIONS = new Set(['RESTRICT', 'CASCADE', 'SET NULL', 'SET DEFAULT', 'NO ACTION']);
 
+export const COMMENT_PREFIX = '\x00comment:';
+
 export function generateDDL(diff: SchemaDiff): string[] {
     const statements: string[] = [];
     const { dialect, pgSchema } = diff;
@@ -15,6 +17,7 @@ export function generateDDL(diff: SchemaDiff): string[] {
 
     // New tables
     for (const table of diff.addedTables) {
+        statements.push(`${COMMENT_PREFIX}${table.name}`);
         if (dialect === 'postgres') {
             // Create enum types first for PG, deduplicating globally
             for (const col of table.columns) {
@@ -79,6 +82,7 @@ export function generateDDL(diff: SchemaDiff): string[] {
 
     // Modified tables
     for (const tableDiff of diff.modifiedTables) {
+        statements.push(`${COMMENT_PREFIX}${tableDiff.tableName}`);
         statements.push(...generateTableDDL(tableDiff, dialect, pgSchema, globalEnumTypes));
     }
 
@@ -99,6 +103,7 @@ export function generateDDL(diff: SchemaDiff): string[] {
             }
         }
         for (const table of diff.removedTables) {
+            statements.push(`${COMMENT_PREFIX}${table.name}`);
             statements.push(`DROP TABLE ${qTable(dialect, table.name, pgSchema)}`);
         }
     }
@@ -534,7 +539,13 @@ function createEnumType(typeName: string, values: string[], pgSchema?: string): 
     const vals = values.map(v => `'${escapeStr(v)}'`).join(', ');
     const schemaFilter =
         pgSchema && pgSchema !== 'public' ? ` AND typnamespace = (SELECT oid FROM pg_namespace WHERE nspname = '${escapeStr(pgSchema)}')` : '';
-    return `DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = '${escapeStr(typeName)}'${schemaFilter}) THEN CREATE TYPE ${qualifiedName} AS ENUM (${vals}); END IF; END $$`;
+    return [
+        `DO $$ BEGIN`,
+        `IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = '${escapeStr(typeName)}'${schemaFilter}) THEN`,
+        `    CREATE TYPE ${qualifiedName} AS ENUM (${vals});`,
+        `END IF;`,
+        `END $$`
+    ].join('\n');
 }
 
 // --- MySQL column definition ---

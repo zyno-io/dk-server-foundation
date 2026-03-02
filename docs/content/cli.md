@@ -142,10 +142,10 @@ npx @zyno-io/dk-server-foundation create-app <package-name> [path]
 dksf-create-app <package-name> [path]
 ```
 
-| Argument         | Description                                                      |
-| ---------------- | ---------------------------------------------------------------- |
-| `<package-name>` | npm package name (e.g. `@myorg/my-api` or `my-api`)             |
-| `[path]`         | Output directory (defaults to the unscoped package name)         |
+| Argument         | Description                                              |
+| ---------------- | -------------------------------------------------------- |
+| `<package-name>` | npm package name (e.g. `@myorg/my-api` or `my-api`)      |
+| `[path]`         | Output directory (defaults to the unscoped package name) |
 
 The generated project includes:
 

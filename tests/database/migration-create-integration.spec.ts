@@ -2,7 +2,7 @@ import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { ActiveRecord } from '@deepkit/orm';
 import { SQLDatabaseAdapter } from '@deepkit/sql';
-import { AutoIncrement, entity, Index, MaxLength, PrimaryKey } from '@deepkit/type';
+import { AutoIncrement, entity, Index, MaxLength, PrimaryKey, Unique } from '@deepkit/type';
 
 import { DateString } from '../../src';
 import { getDialect, Dialect } from '../../src/database/dialect';
@@ -44,6 +44,32 @@ class MigSessionEntity extends ActiveRecord {
 }
 
 const testEntities = [MigUserEntity, MigPostEntity, MigSessionEntity];
+
+// --- Union type test entities (separate from main entities to avoid createTables issues) ---
+
+@entity.name('mig_union_types')
+class MigUnionTypesEntity extends ActiveRecord {
+    id!: number & AutoIncrement & PrimaryKey;
+    stringUnion!: 'active' | 'inactive' | 'banned';
+    numberUnion!: 1 | 2 | 3;
+    nullableStringUnion!: ('enabled' | 'disabled') | null;
+}
+
+const unionTestEntities = [MigUnionTypesEntity];
+
+// --- Index options test entities ---
+
+@(entity.name('mig_index_options').index(['groupId', 'name'], { unique: true }).index(['groupId', 'priority'], { name: 'idx_custom_name' }))
+class MigIndexOptionsEntity extends ActiveRecord {
+    id!: number & AutoIncrement & PrimaryKey;
+    email!: string & MaxLength<255> & Unique;
+    tag!: string & MaxLength<100> & Index<{ name: 'idx_custom_tag' }>;
+    groupId!: number;
+    name!: string & MaxLength<100>;
+    priority!: number;
+}
+
+const indexTestEntities = [MigIndexOptionsEntity];
 
 describe('migration:create integration', () => {
     forEachAdapter(({ createFacade, type: adapterType }) => {
@@ -119,9 +145,9 @@ describe('migration:create integration', () => {
                 assert.equal(publishedAtCol.type, 'date');
                 assert.equal(publishedAtCol.nullable, true);
 
-                // Check index on email (should appear exactly once after deduplication)
+                // Check index on email (should appear exactly once)
                 const emailIndexes = users.indexes.filter(i => i.columns.includes('email'));
-                assert.equal(emailIndexes.length, 1, 'email index should appear exactly once (no duplicates)');
+                assert.equal(emailIndexes.length, 1, 'email index should appear exactly once');
 
                 // Check optional (?) fields are nullable
                 const sessions = entitySchema.get('mig_sessions')!;
@@ -154,6 +180,125 @@ describe('migration:create integration', () => {
                 for (let i = 1; i < positions.length; i++) {
                     assert.ok(positions[i] > positions[i - 1], `Column order should be sequential`);
                 }
+            });
+        });
+
+        describe('entity reader — union types', () => {
+            const uf = createFacade({ entities: unionTestEntities });
+
+            before(
+                async () => {
+                    await uf.start();
+                },
+                { timeout: 10_000 }
+            );
+            after(() => uf.stop(), { timeout: 10_000 });
+
+            it('should resolve string literal union as enum', () => {
+                const db = uf.getDb();
+                const entitySchema = readEntitiesSchema(db, dialect);
+                const tbl = entitySchema.get('mig_union_types')!;
+                assert.ok(tbl, 'mig_union_types table should exist');
+
+                const col = tbl.columns.find(c => c.name === 'stringUnion')!;
+                assert.equal(col.type, 'enum');
+                assert.deepEqual(col.enumValues, ['active', 'inactive', 'banned']);
+                if (dialect === 'postgres') {
+                    assert.equal(col.enumTypeName, 'mig_union_types_stringUnion');
+                }
+            });
+
+            it('should resolve number literal union as smallest integer type', () => {
+                const db = uf.getDb();
+                const entitySchema = readEntitiesSchema(db, dialect);
+                const tbl = entitySchema.get('mig_union_types')!;
+
+                const col = tbl.columns.find(c => c.name === 'numberUnion')!;
+                if (dialect === 'mysql') {
+                    assert.equal(col.type, 'tinyint');
+                    assert.equal(col.unsigned, true);
+                } else {
+                    assert.equal(col.type, 'smallint');
+                }
+            });
+
+            it('should resolve nullable string literal union as nullable enum', () => {
+                const db = uf.getDb();
+                const entitySchema = readEntitiesSchema(db, dialect);
+                const tbl = entitySchema.get('mig_union_types')!;
+
+                const col = tbl.columns.find(c => c.name === 'nullableStringUnion')!;
+                assert.equal(col.type, 'enum');
+                assert.equal(col.nullable, true);
+                assert.deepEqual(col.enumValues, ['enabled', 'disabled']);
+            });
+        });
+
+        describe('entity reader — index options', () => {
+            const xf = createFacade({ entities: indexTestEntities });
+
+            before(
+                async () => {
+                    await xf.start();
+                },
+                { timeout: 10_000 }
+            );
+            after(() => xf.stop(), { timeout: 10_000 });
+
+            it('should resolve & Unique as index with unique: true', () => {
+                const db = xf.getDb();
+                const entitySchema = readEntitiesSchema(db, dialect);
+                const tbl = entitySchema.get('mig_index_options')!;
+                assert.ok(tbl, 'mig_index_options table should exist');
+
+                const emailIndex = tbl.indexes.find(i => i.columns.length === 1 && i.columns[0] === 'email');
+                assert.ok(emailIndex, 'should have an index on email');
+                assert.equal(emailIndex.unique, true, 'email index should be unique');
+            });
+
+            it('should use custom name from & Index<{name: ...}>', () => {
+                const db = xf.getDb();
+                const entitySchema = readEntitiesSchema(db, dialect);
+                const tbl = entitySchema.get('mig_index_options')!;
+
+                const tagIndex = tbl.indexes.find(i => i.columns.length === 1 && i.columns[0] === 'tag');
+                assert.ok(tagIndex, 'should have an index on tag');
+                assert.equal(tagIndex.name, 'idx_custom_tag', 'tag index should use custom name');
+            });
+
+            it('should create composite unique index from @entity.index()', () => {
+                const db = xf.getDb();
+                const entitySchema = readEntitiesSchema(db, dialect);
+                const tbl = entitySchema.get('mig_index_options')!;
+
+                const compositeUnique = tbl.indexes.find(
+                    i => i.columns.length === 2 && i.columns.includes('groupId') && i.columns.includes('name') && i.unique
+                );
+                assert.ok(compositeUnique, 'should have a composite unique index on [groupId, name]');
+            });
+
+            it('should use custom name from @entity.index() options', () => {
+                const db = xf.getDb();
+                const entitySchema = readEntitiesSchema(db, dialect);
+                const tbl = entitySchema.get('mig_index_options')!;
+
+                const customNameIdx = tbl.indexes.find(i => i.name === 'idx_custom_name');
+                assert.ok(customNameIdx, 'should have an index with custom name idx_custom_name');
+                assert.deepEqual(customNameIdx.columns, ['groupId', 'priority']);
+            });
+
+            it('should not produce duplicate indexes', () => {
+                const db = xf.getDb();
+                const entitySchema = readEntitiesSchema(db, dialect);
+                const tbl = entitySchema.get('mig_index_options')!;
+
+                // Count indexes that include 'email' — should be exactly 1
+                const emailIndexes = tbl.indexes.filter(i => i.columns.includes('email'));
+                assert.equal(emailIndexes.length, 1, 'email should have exactly one index (no duplicates)');
+
+                // Count indexes that include 'tag' — should be exactly 1
+                const tagIndexes = tbl.indexes.filter(i => i.columns.includes('tag'));
+                assert.equal(tagIndexes.length, 1, 'tag should have exactly one index (no duplicates)');
             });
         });
 

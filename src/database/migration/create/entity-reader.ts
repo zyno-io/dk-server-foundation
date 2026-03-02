@@ -67,45 +67,32 @@ function readTableSchema(reflection: ReflectionClass<unknown>, tableName: string
         if (col) {
             columns.push(col);
             if (col.isPrimaryKey) pkColumns.push(col.name);
-
-            // Single-column index from property
-            const indexInfo = prop.getIndex();
-            if (indexInfo) {
-                indexes.push({
-                    name: indexInfo.name || `idx_${tableName}_${col.name}`,
-                    columns: [col.name],
-                    unique: indexInfo.unique || false,
-                    spatial: false
-                });
-            }
         } else {
             skippedColumns.add(prop.name);
             console.warn(`migration:create: Skipping column '${prop.name}' in '${tableName}' — unsupported type`);
         }
     }
 
-    // Multi-column indexes from entity-level indexes
-    if (reflection.indexes) {
-        for (const idx of reflection.indexes) {
-            indexes.push({
-                name: idx.options.name || `idx_${tableName}_${idx.names.join('_')}`,
-                columns: idx.names,
-                unique: idx.options.unique || false,
-                spatial: dialect === 'mysql' ? idx.options.spatial || false : false
-            });
-        }
+    // Read all indexes from reflection (includes both property-level & Index/Unique
+    // and entity-level @entity.index() — Deepkit merges them in registerProperty())
+    const seen = new Set<string>();
+    for (const idx of reflection.indexes) {
+        // Skip indexes that reference columns we couldn't resolve
+        if (idx.names.some(n => skippedColumns.has(n))) continue;
+
+        const name = idx.options.name || `idx_${tableName}_${idx.names.join('_')}`;
+        if (seen.has(name)) continue;
+        seen.add(name);
+
+        indexes.push({
+            name,
+            columns: idx.names,
+            unique: idx.options.unique || false,
+            spatial: dialect === 'mysql' ? idx.options.spatial || false : false
+        });
     }
 
-    // Deduplicate indexes by name (Deepkit stores property-level indexes
-    // both on the property and in reflection.indexes)
-    const seen = new Set<string>();
-    const dedupedIndexes = indexes.filter(idx => {
-        if (seen.has(idx.name)) return false;
-        seen.add(idx.name);
-        return true;
-    });
-
-    return { name: tableName, columns, indexes: dedupedIndexes, foreignKeys, skippedColumns };
+    return { name: tableName, columns, indexes, foreignKeys, skippedColumns };
 }
 
 function readColumn(prop: ReflectionProperty, ordinal: number, dialect: Dialect, tableName?: string): ColumnSchema | null {
@@ -230,7 +217,32 @@ function resolveColumnType(type: Type, columnName: string, dialect: Dialect, par
         if (nonNull.length === 1) {
             return resolveColumnType(nonNull[0], columnName, dialect, parentTableName);
         }
-        // Multiple non-null union members -- treat as the first (lossy; warn)
+        // Union of string literals → treat as enum (same as TypeScript enum with string values)
+        if (nonNull.length > 0 && nonNull.every(t => t.kind === ReflectionKind.literal && typeof (t as TypeLiteral).literal === 'string')) {
+            const stringValues = nonNull.map(t => (t as TypeLiteral).literal as string);
+            if (dialect === 'postgres') {
+                const typeName = parentTableName ? `${parentTableName}_${columnName}` : columnName;
+                return { type: 'enum', enumValues: stringValues, enumTypeName: typeName };
+            }
+            return { type: 'enum', enumValues: stringValues };
+        }
+
+        // Union of number literals → use smallest fitting integer type
+        if (nonNull.length > 0 && nonNull.every(t => t.kind === ReflectionKind.literal && typeof (t as TypeLiteral).literal === 'number')) {
+            const numValues = nonNull.map(t => (t as TypeLiteral).literal as number);
+            const minVal = Math.min(...numValues);
+            const maxVal = Math.max(...numValues);
+            if (dialect === 'mysql') {
+                if (minVal >= 0 && maxVal <= 255) return { type: 'tinyint', unsigned: true };
+                if (minVal >= -128 && maxVal <= 127) return { type: 'tinyint' };
+                if (minVal >= 0 && maxVal <= 65535) return { type: 'smallint', unsigned: true };
+                return { type: 'int' };
+            }
+            if (minVal >= -32768 && maxVal <= 32767) return { type: 'smallint' };
+            return { type: 'int' };
+        }
+
+        // Mixed/unsupported union -- treat as the first member (lossy; warn)
         if (nonNull.length > 0) {
             console.warn(
                 `migration:create: Column '${columnName}'${parentTableName ? ` in '${parentTableName}'` : ''} ` +

@@ -2,13 +2,19 @@
     "name": "@zyno-io/dk-server-foundation",
     "version": "0.0.0-dev",
     "description": "TypeScript server foundation built on the Deepkit framework",
-    "repository": {
-        "type": "git",
-        "url": "https://github.com/zyno-io/dk-server-foundation.git"
-    },
     "homepage": "https://github.com/zyno-io/dk-server-foundation#readme",
     "bugs": {
         "url": "https://github.com/zyno-io/dk-server-foundation/issues"
+    },
+    "license": "MIT",
+    "author": {
+        "name": "Signal24 LLC dba Zyno Consulting",
+        "email": "support@zyno.io",
+        "url": "https://zyno.io"
+    },
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/zyno-io/dk-server-foundation.git"
     },
     "bin": {
         "dk-server-foundation": "./dist/src/cli/dksf.js",
@@ -19,12 +25,31 @@
         "dksf-test": "./dist/src/cli/dksf-test.js",
         "dksf-update": "./dist/src/cli/dksf-update.js"
     },
+    "files": [
+        "dist/src/",
+        "dist/devconsole/",
+        "dist/resources/",
+        "docs/",
+        "patches/",
+        "src/",
+        "template-app/",
+        "types.d.ts",
+        "!**/*.tsbuildinfo",
+        "!**/CLAUDE.md",
+        "!**/*_MIGRATION_GUIDE.md"
+    ],
+    "main": "./dist/src/index.js",
+    "types": "./dist/src/index.d.ts",
+    "exports": {
+        ".": "./dist/src/index.js",
+        "./*": "./dist/src/*"
+    },
     "scripts": {
         "clean": "rm -rf dist",
         "build": "yarn clean && yarn gen:proto && yarn build:devconsole && tsc -p tsconfig.json && chmod +x dist/src/cli/*.js && date",
         "build:devconsole": "cd devconsole && yarn install && yarn build",
         "test": "tsc -p tsconfig.test.json && dksf-test",
-        "format": "npx oxlint --fix --fix-suggestions --fix-dangerously && prettier --write .",
+        "format": "npx oxlint --fix --fix-suggestions --fix-dangerously && oxfmt",
         "dev": "tsc -p tsconfig.json --watch",
         "postinstall": "dksf-install || yarn postinstall:alt",
         "postinstall:alt": "patch-package && deepkit-type-install",
@@ -32,12 +57,6 @@
         "devconsole-demo": "yarn build:devconsole && dksf-dev run -p tsconfig.devconsole-demo.json dist/devconsole-demo/bootstrap",
         "gen:proto": "ts-node src/cli/dksf-gen-proto.ts resources/proto/test.proto resources/proto/generated/test && ts-node src/cli/dksf-gen-proto.ts resources/proto/devconsole.proto resources/proto/generated/devconsole"
     },
-    "author": {
-        "name": "Signal24 LLC dba Zyno Consulting",
-        "email": "support@zyno.io",
-        "url": "https://zyno.io"
-    },
-    "license": "MIT",
     "dependencies": {
         "@bufbuild/protobuf": "^2.11.0",
         "@deepkit/app": "1.0.19",
@@ -117,31 +136,11 @@
         "lefthook": "^2.1.1",
         "npm-run-all": "^4.1.5",
         "oxlint": "^1.49.0",
-        "prettier": "^3.8.1",
         "ts-essentials": "^10.1.1",
         "ts-node": "^10.9.2",
         "tslib": "^2.8.1",
         "type-fest": "^5.4.4",
         "typescript": "~5.9"
-    },
-    "files": [
-        "dist/src/",
-        "dist/devconsole/",
-        "dist/resources/",
-        "docs/",
-        "patches/",
-        "src/",
-        "template-app/",
-        "types.d.ts",
-        "!**/*.tsbuildinfo",
-        "!**/CLAUDE.md",
-        "!**/*_MIGRATION_GUIDE.md"
-    ],
-    "main": "./dist/src/index.js",
-    "types": "./dist/src/index.d.ts",
-    "exports": {
-        ".": "./dist/src/index.js",
-        "./*": "./dist/src/*"
     },
     "packageManager": "yarn@4.12.0"
 }
