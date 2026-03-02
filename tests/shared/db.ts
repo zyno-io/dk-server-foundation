@@ -14,8 +14,6 @@ import {
     TestingHelpers
 } from '../../src';
 
-export const pgAvailable = !!process.env.PG_HOST;
-
 interface IDBTestingFacadeOptions extends ITestingFacadeOptions {
     dbType?: 'mysql' | 'postgres';
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -88,18 +86,13 @@ export interface AdapterDescriptor {
     createFacade: (options?: IDBTestingFacadeOptions) => ExtendedTF;
 }
 
-const allAdapters: (AdapterDescriptor & { skip: string | false })[] = [
-    { name: 'MySQL', type: 'mysql', skip: false, createFacade: opts => createTestingFacadeWithDatabase({ ...opts!, dbType: 'mysql' }) },
-    {
-        name: 'PostgreSQL',
-        type: 'postgres',
-        skip: !pgAvailable && 'PG_HOST not set',
-        createFacade: opts => createTestingFacadeWithDatabase({ ...opts!, dbType: 'postgres' })
-    }
+const allAdapters: AdapterDescriptor[] = [
+    { name: 'MySQL', type: 'mysql', createFacade: opts => createTestingFacadeWithDatabase({ ...opts!, dbType: 'mysql' }) },
+    { name: 'PostgreSQL', type: 'postgres', createFacade: opts => createTestingFacadeWithDatabase({ ...opts!, dbType: 'postgres' }) }
 ];
 
 export function forEachAdapter(fn: (adapter: AdapterDescriptor) => void) {
-    for (const { skip, ...adapter } of allAdapters) {
-        describe(adapter.name, { skip }, () => fn(adapter));
+    for (const adapter of allAdapters) {
+        describe(adapter.name, () => fn(adapter));
     }
 }
