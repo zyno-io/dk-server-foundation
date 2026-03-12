@@ -125,7 +125,7 @@ await clientService.stop();
 
 ### API
 
-#### `new MeshClientService<TMeta>(options)`
+#### `new MeshClientService<TMeta, TBroadcasts>(options)`
 
 | Option            | Type                                                     | Description                                                     |
 | ----------------- | -------------------------------------------------------- | --------------------------------------------------------------- |
@@ -150,6 +150,8 @@ await clientService.stop();
 | `registerClient(clientId, metadata)`              | Register a client on this node                       |
 | `unregisterClient(clientId)` → `Promise<boolean>` | Unregister (returns false if client moved elsewhere) |
 | `invoke(clientId, type, data, timeoutMs?)`        | Invoke on any client, routes automatically           |
+| `registerBroadcastHandler(type, handler)`         | Register a handler for a broadcast type              |
+| `broadcast(type, data, options?)`                 | Broadcast to all nodes in the mesh                   |
 
 ---
 
@@ -203,6 +205,14 @@ await server.meshStart();
 // Type-safe invoke on any client, regardless of which node
 await server.invoke('client-123', 'dNotify', { text: 'hello' });
 
+// Broadcast to all nodes (uses MeshService broadcast under the hood)
+// Add a TBroadcasts generic to the server for type-safe broadcasts:
+//   new MeshSrpcServer<Meta, ClientMsg, ServerMsg, RegistryMeta, MyBroadcasts>(...)
+server.registerBroadcastHandler('configUpdated', (data, senderInstanceId) => {
+    console.log(`Config updated by node ${senderInstanceId}:`, data);
+});
+await server.broadcast('configUpdated', { keys: ['feature-flag-x'] });
+
 // Access the registry
 const allClients = await server.clientRegistry.listClients();
 
@@ -237,14 +247,16 @@ new MeshSrpcServer(options: ISrpcServerOptions & MeshSrpcServerOptions)
 
 #### Methods
 
-| Method                                       | Description                                                            |
-| -------------------------------------------- | ---------------------------------------------------------------------- |
-| `meshStart()`                                | Start mesh client tracking                                             |
-| `meshStop()`                                 | Stop mesh client tracking (call before `close()`)                      |
-| `invoke(clientId, prefix, data, timeoutMs?)` | Type-safe invoke on any client across any node                         |
-| `onClientConnected(handler)`                 | Fires on the node the client connected to                              |
-| `onClientDisconnected(handler)`              | Fires on the node the client disconnected from                         |
-| `onNodeClientsOrphaned(handler)`             | Fires on the **leader node** when a dead node's clients are cleaned up |
+| Method                                       | Description                                                                               |
+| -------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `meshStart()`                                | Start mesh client tracking                                                                |
+| `meshStop()`                                 | Stop mesh client tracking (call before `close()`)                                         |
+| `invoke(clientId, prefix, data, timeoutMs?)` | Type-safe invoke on any client across any node                                            |
+| `registerBroadcastHandler(type, handler)`    | Register a handler for a broadcast type (see [MeshService broadcasts](./mesh-service.md)) |
+| `broadcast(type, data, options?)`            | Broadcast to all nodes in the mesh                                                        |
+| `onClientConnected(handler)`                 | Fires on the node the client connected to                                                 |
+| `onClientDisconnected(handler)`              | Fires on the node the client disconnected from                                            |
+| `onNodeClientsOrphaned(handler)`             | Fires on the **leader node** when a dead node's clients are cleaned up                    |
 
 Plus all `SrpcServer` methods: `registerMessageHandler`, `registerConnectionHandler`, `registerDisconnectHandler`, `setClientAuthorizer`, etc.
 

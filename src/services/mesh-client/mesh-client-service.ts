@@ -1,5 +1,5 @@
 import { createLogger } from '../logger';
-import { MeshService, type MeshServiceOptions } from '../mesh';
+import { MeshService, type MeshBroadcastMap, type MeshBroadcastOptions, type MeshServiceOptions } from '../mesh';
 import { MeshClientRedisRegistry } from './mesh-client-redis-registry';
 import { MeshClientRegistry } from './mesh-client-registry';
 import { ClientDisconnectedError, ClientInvocationError, ClientNotFoundError, type MeshClientRegistryBackend, type RegisteredClient } from './types';
@@ -24,10 +24,11 @@ export interface MeshClientServiceOptions<TMeta> {
 
 // --- MeshClientService ---
 
-export class MeshClientService<TMeta> {
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export class MeshClientService<TMeta, TBroadcasts extends MeshBroadcastMap = {}> {
     // Exposed for MeshSrpcServer to access internals
     /** @internal */
-    readonly mesh: MeshService<ForwardMessages>;
+    readonly mesh: MeshService<ForwardMessages, TBroadcasts>;
     private logger = createLogger(this);
     private registry: MeshClientRegistry<TMeta>;
     private backend: MeshClientRegistryBackend<TMeta>;
@@ -38,7 +39,7 @@ export class MeshClientService<TMeta> {
         this.backend = options.registryBackend ?? new MeshClientRedisRegistry<TMeta>(`_mc:${options.key}`);
         this.clientInvokeFn = options.clientInvokeFn;
 
-        this.mesh = new MeshService<ForwardMessages>(`_mc:${options.key}`, options.meshOptions);
+        this.mesh = new MeshService<ForwardMessages, TBroadcasts>(`_mc:${options.key}`, options.meshOptions);
         this.mesh.registerHandler('forward', async (req: ForwardRequest): Promise<ForwardResponse> => {
             try {
                 const result = await this.clientInvokeFn(req.clientId, req.type, req.data, req.timeoutMs);
@@ -108,6 +109,17 @@ export class MeshClientService<TMeta> {
     async unregisterClient(clientId: string): Promise<boolean> {
         if (!this.running) return false;
         return this.registry.unregister(clientId);
+    }
+
+    registerBroadcastHandler<K extends keyof TBroadcasts & string>(
+        type: K,
+        handler: (data: TBroadcasts[K], senderInstanceId: number) => void | Promise<void>
+    ): void {
+        this.mesh.registerBroadcastHandler(type, handler);
+    }
+
+    async broadcast<K extends keyof TBroadcasts & string>(type: K, data: TBroadcasts[K], options?: MeshBroadcastOptions): Promise<void> {
+        return this.mesh.broadcast(type, data, options);
     }
 
     async invoke(clientId: string, type: string, data: unknown, timeoutMs?: number): Promise<unknown> {

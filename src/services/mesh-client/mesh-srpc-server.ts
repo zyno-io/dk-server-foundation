@@ -1,5 +1,5 @@
 import type { BaseMessage, ISrpcServerOptions, SrpcMeta, SrpcStream } from '../../srpc/types';
-import type { MeshServiceOptions } from '../mesh';
+import type { MeshBroadcastMap, MeshBroadcastOptions, MeshServiceOptions } from '../mesh';
 
 import { SrpcServer } from '../../srpc/SrpcServer';
 import { createLogger } from '../logger';
@@ -22,9 +22,11 @@ export class MeshSrpcServer<
     TMeta extends SrpcMeta = SrpcMeta,
     TClientOutput extends BaseMessage = BaseMessage,
     TServerOutput extends BaseMessage = BaseMessage,
-    TRegistryMeta = TMeta
+    TRegistryMeta = TMeta,
+    // eslint-disable-next-line @typescript-eslint/no-empty-object-type
+    TBroadcasts extends MeshBroadcastMap = {}
 > extends SrpcServer<TMeta, TClientOutput, TServerOutput> {
-    private meshClientService: MeshClientService<TRegistryMeta>;
+    private meshClientService: MeshClientService<TRegistryMeta, TBroadcasts>;
     private meshLogger = createLogger(this);
     private extractMetadataFn?: (stream: SrpcStream<TMeta>) => TRegistryMeta;
 
@@ -43,7 +45,10 @@ export class MeshSrpcServer<
 
         this.extractMetadataFn = options.extractMetadata;
 
-        this.meshClientService = new MeshClientService<TRegistryMeta>({
+        // Cast needed: MeshClientServiceOptions doesn't carry TBroadcasts,
+        // but the broadcast generic only affects registerBroadcastHandler/broadcast
+        // which are type-safe at the call site.
+        this.meshClientService = new MeshClientService({
             key: options.meshKey,
             meshOptions: options.meshOptions,
             registryBackend: options.registryBackend,
@@ -55,7 +60,7 @@ export class MeshSrpcServer<
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 return super.invoke(stream, type as any, data as any, timeoutMs);
             }
-        });
+        }) as MeshClientService<TRegistryMeta, TBroadcasts>;
 
         // Wire up mesh node cleanup callback
         this.meshClientService.onNodeClientsOrphaned(async (nodeId, orphaned) => {
@@ -145,6 +150,17 @@ export class MeshSrpcServer<
 
     onNodeClientsOrphaned(handler: (nodeId: number, clients: RegisteredClient<TRegistryMeta>[]) => void | Promise<void>): void {
         this.orphanedCallbacks.add(handler);
+    }
+
+    registerBroadcastHandler<K extends keyof TBroadcasts & string>(
+        type: K,
+        handler: (data: TBroadcasts[K], senderInstanceId: number) => void | Promise<void>
+    ): void {
+        this.meshClientService.registerBroadcastHandler(type, handler);
+    }
+
+    async broadcast<K extends keyof TBroadcasts & string>(type: K, data: TBroadcasts[K], options?: MeshBroadcastOptions): Promise<void> {
+        return this.meshClientService.broadcast(type, data, options);
     }
 
     /**
