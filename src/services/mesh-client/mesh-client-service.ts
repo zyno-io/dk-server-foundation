@@ -111,6 +111,11 @@ export class MeshClientService<TMeta, TBroadcasts extends MeshBroadcastMap = {}>
         return this.registry.unregister(clientId);
     }
 
+    async updateClientMetadata(clientId: string, metadata: TMeta): Promise<boolean> {
+        if (!this.running) return false;
+        return this.registry.updateMetadata(clientId, metadata);
+    }
+
     registerBroadcastHandler<K extends keyof TBroadcasts & string>(
         type: K,
         handler: (data: TBroadcasts[K], senderInstanceId: number) => void | Promise<void>

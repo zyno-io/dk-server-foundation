@@ -14,6 +14,10 @@ export class MeshClientRegistry<TMeta> {
         return this.backend.unregister(clientId, this.nodeId);
     }
 
+    async updateMetadata(clientId: string, metadata: TMeta): Promise<boolean> {
+        return this.backend.updateMetadata(clientId, this.nodeId, metadata);
+    }
+
     async getClient(clientId: string): Promise<RegisteredClient<TMeta> | undefined> {
         return this.backend.getClient(clientId);
     }

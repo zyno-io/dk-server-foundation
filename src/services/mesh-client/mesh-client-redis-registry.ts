@@ -65,6 +65,32 @@ redis.call("srem", setKey, clientId)
 return 1
 `;
 
+// UPDATE_METADATA atomically updates metadata only if the client is owned by the given node.
+// KEYS[1] = clients hash
+// ARGV[1] = clientId, ARGV[2] = nodeId, ARGV[3] = metadataJson
+const UPDATE_METADATA_SCRIPT = `
+local clientsKey = KEYS[1]
+local clientId = ARGV[1]
+local nodeId = ARGV[2]
+local metadataJson = ARGV[3]
+local ttl = ${KEY_TTL_SECONDS}
+
+local existing = redis.call("hget", clientsKey, clientId)
+if not existing then
+    return 0
+end
+
+local parsed = cjson.decode(existing)
+if tostring(parsed.nodeId) ~= nodeId then
+    return 0
+end
+
+local value = cjson.encode({nodeId = parsed.nodeId, metadata = cjson.decode(metadataJson)})
+redis.call("hset", clientsKey, clientId, value)
+redis.call("expire", clientsKey, ttl)
+return 1
+`;
+
 const CLEANUP_NODE_SCRIPT = `
 local clientsKey = KEYS[1]
 local setKey = KEYS[2]
@@ -101,6 +127,7 @@ type ClientRedisClient = ReturnType<typeof createRedis>['client'] & {
         setKeyPrefix: string
     ) => Promise<number>;
     MC_UNREGISTER: (clientsKey: string, setKey: string, clientId: string, nodeId: string) => Promise<number>;
+    MC_UPDATE_METADATA: (clientsKey: string, clientId: string, nodeId: string, metadataJson: string) => Promise<number>;
     MC_CLEANUP_NODE: (clientsKey: string, setKey: string, nodeId: string) => Promise<string[]>;
 };
 
@@ -111,6 +138,7 @@ function getClientRedis(): { client: ClientRedisClient; prefix: string } {
         const { client, prefix } = createRedis('MESH');
         client.defineCommand('MC_REGISTER', { lua: REGISTER_SCRIPT, numberOfKeys: 2 });
         client.defineCommand('MC_UNREGISTER', { lua: UNREGISTER_SCRIPT, numberOfKeys: 2 });
+        client.defineCommand('MC_UPDATE_METADATA', { lua: UPDATE_METADATA_SCRIPT, numberOfKeys: 1 });
         client.defineCommand('MC_CLEANUP_NODE', { lua: CLEANUP_NODE_SCRIPT, numberOfKeys: 2 });
         clientRedis = { client: client as ClientRedisClient, prefix };
     }
@@ -163,6 +191,12 @@ export class MeshClientRedisRegistry<TMeta> implements MeshClientRegistryBackend
     async unregister(clientId: string, nodeId: number): Promise<boolean> {
         const { client } = getClientRedis();
         const result = await client.MC_UNREGISTER(this.clientsKey(), this.nodeSetKey(nodeId), clientId, String(nodeId));
+        return result === 1;
+    }
+
+    async updateMetadata(clientId: string, nodeId: number, metadata: TMeta): Promise<boolean> {
+        const { client } = getClientRedis();
+        const result = await client.MC_UPDATE_METADATA(this.clientsKey(), clientId, String(nodeId), JSON.stringify(metadata));
         return result === 1;
     }
 

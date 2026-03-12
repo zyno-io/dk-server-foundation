@@ -197,6 +197,37 @@ describe('MeshClientRegistry', () => {
         assert.strictEqual(clients.length, 0);
     });
 
+    it('updateMetadata updates metadata for owned client', async () => {
+        await registry1.register('client-1', { userId: 'u1', role: 'user' });
+
+        const updated = await registry1.updateMetadata('client-1', { userId: 'u1', role: 'superadmin' });
+        assert.strictEqual(updated, true);
+
+        const client = await registry1.getClient('client-1');
+        assert.ok(client);
+        assert.strictEqual(client.metadata.role, 'superadmin');
+        assert.strictEqual(client.nodeId, 1); // nodeId unchanged
+    });
+
+    it('updateMetadata returns false when client moved to another node', async () => {
+        await registry1.register('client-1', { userId: 'u1', role: 'user' });
+        await registry2.register('client-1', { userId: 'u1', role: 'user' });
+
+        const updated = await registry1.updateMetadata('client-1', { userId: 'u1', role: 'superadmin' });
+        assert.strictEqual(updated, false);
+
+        // Metadata should be unchanged
+        const client = await registry1.getClient('client-1');
+        assert.ok(client);
+        assert.strictEqual(client.metadata.role, 'user');
+        assert.strictEqual(client.nodeId, 2);
+    });
+
+    it('updateMetadata returns false for non-existent client', async () => {
+        const updated = await registry1.updateMetadata('nonexistent', { userId: 'u1', role: 'admin' });
+        assert.strictEqual(updated, false);
+    });
+
     it('register updates metadata for existing client on same node', async () => {
         await registry1.register('client-1', { userId: 'u1', role: 'user' });
         await registry1.register('client-1', { userId: 'u1', role: 'admin' });

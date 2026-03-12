@@ -33,6 +33,9 @@ const client = await registry.getClient('client-123');
 const all = await registry.listClients();
 const local = await registry.listClientsForNode(mesh.instanceId);
 
+// Update metadata (ownership-safe: only updates if this node owns the registration)
+const updated = await registry.updateMetadata('client-123', { userId: 'user-1', role: 'superadmin' });
+
 // Ownership-safe: only removes if this node owns the registration
 const removed = await registry.unregister('client-123'); // true if removed, false if client moved
 ```
@@ -46,6 +49,14 @@ class DatabaseClientRegistry<TMeta> implements MeshClientRegistryBackend<TMeta> 
     }
     async unregister(clientId: string, nodeId: number): Promise<boolean> {
         const result = await db.query(`DELETE FROM connected_clients WHERE client_id = ? AND node_id = ?`, [clientId, nodeId]);
+        return result.affectedRows > 0;
+    }
+    async updateMetadata(clientId: string, nodeId: number, metadata: TMeta): Promise<boolean> {
+        const result = await db.query(`UPDATE connected_clients SET metadata = ? WHERE client_id = ? AND node_id = ?`, [
+            JSON.stringify(metadata),
+            clientId,
+            nodeId
+        ]);
         return result.affectedRows > 0;
     }
     async getClient(clientId: string) {
@@ -77,6 +88,10 @@ Register a client on this node. If the client was previously registered on a dif
 
 Remove a client registration. Returns `true` if the client was owned by this node and was removed. Returns `false` if the client had already reconnected to a different node (ownership-safe).
 
+#### `updateMetadata(clientId, metadata)` → `Promise<boolean>`
+
+Update metadata for a registered client. Returns `true` if the client was owned by this node and was updated. Returns `false` if the client is not registered or has moved to a different node (ownership-safe).
+
 #### `getClient(clientId)` → `Promise<RegisteredClient<TMeta> | undefined>`
 
 Look up a client by ID across all nodes.
@@ -102,7 +117,12 @@ Combines MeshClientRegistry with MeshService for transparent cross-node client i
 ```typescript
 import { MeshClientService } from '@zyno-io/dk-server-foundation';
 
-const clientService = new MeshClientService<ClientMeta>({
+// Define broadcast types for type-safe broadcasting
+interface MyBroadcasts {
+    configUpdated: { keys: string[] };
+}
+
+const clientService = new MeshClientService<ClientMeta, MyBroadcasts>({
     key: 'my-app',
     clientInvokeFn: async (clientId, type, data, timeoutMs) => {
         // Another node wants to invoke something on a client connected to THIS node.
@@ -115,8 +135,17 @@ await clientService.start();
 
 await clientService.registerClient('client-123', { userId: 'user-1', role: 'admin' });
 
+// Update metadata after registration (ownership-safe)
+await clientService.updateClientMetadata('client-123', { userId: 'user-1', role: 'superadmin' });
+
 // Invoke on any client — routes through mesh if on a different node
 const result = await clientService.invoke('client-123', 'notify', { text: 'hello' });
+
+// Broadcast to all nodes
+clientService.registerBroadcastHandler('configUpdated', (data, senderInstanceId) => {
+    console.log(`Config updated by node ${senderInstanceId}:`, data.keys);
+});
+await clientService.broadcast('configUpdated', { keys: ['feature-flag-x'] });
 
 const clients = await clientService.clientRegistry.listClients();
 
@@ -143,15 +172,16 @@ await clientService.stop();
 
 #### Methods
 
-| Method                                            | Description                                          |
-| ------------------------------------------------- | ---------------------------------------------------- |
-| `start()`                                         | Start the internal mesh and initialize the registry  |
-| `stop()`                                          | Clean up own clients, stop the mesh                  |
-| `registerClient(clientId, metadata)`              | Register a client on this node                       |
-| `unregisterClient(clientId)` → `Promise<boolean>` | Unregister (returns false if client moved elsewhere) |
-| `invoke(clientId, type, data, timeoutMs?)`        | Invoke on any client, routes automatically           |
-| `registerBroadcastHandler(type, handler)`         | Register a handler for a broadcast type              |
-| `broadcast(type, data, options?)`                 | Broadcast to all nodes in the mesh                   |
+| Method                                                          | Description                                          |
+| --------------------------------------------------------------- | ---------------------------------------------------- |
+| `start()`                                                       | Start the internal mesh and initialize the registry  |
+| `stop()`                                                        | Clean up own clients, stop the mesh                  |
+| `registerClient(clientId, metadata)`                            | Register a client on this node                       |
+| `unregisterClient(clientId)` → `Promise<boolean>`               | Unregister (returns false if client moved elsewhere) |
+| `updateClientMetadata(clientId, metadata)` → `Promise<boolean>` | Update metadata (returns false if client moved)      |
+| `invoke(clientId, type, data, timeoutMs?)`                      | Invoke on any client, routes automatically           |
+| `registerBroadcastHandler(type, handler)`                       | Register a handler for a broadcast type              |
+| `broadcast(type, data, options?)`                               | Broadcast to all nodes in the mesh                   |
 
 ---
 
@@ -202,6 +232,9 @@ server.onNodeClientsOrphaned((nodeId, clients) => {
 
 await server.meshStart();
 
+// Update client metadata at any time (ownership-safe)
+await server.updateClientMetadata('client-123', { ...metadata, role: 'superadmin' });
+
 // Type-safe invoke on any client, regardless of which node
 await server.invoke('client-123', 'dNotify', { text: 'hello' });
 
@@ -251,6 +284,7 @@ new MeshSrpcServer(options: ISrpcServerOptions & MeshSrpcServerOptions)
 | -------------------------------------------- | ----------------------------------------------------------------------------------------- |
 | `meshStart()`                                | Start mesh client tracking                                                                |
 | `meshStop()`                                 | Stop mesh client tracking (call before `close()`)                                         |
+| `updateClientMetadata(clientId, metadata)`   | Update metadata (returns false if client moved); also updates local cache                 |
 | `invoke(clientId, prefix, data, timeoutMs?)` | Type-safe invoke on any client across any node                                            |
 | `registerBroadcastHandler(type, handler)`    | Register a handler for a broadcast type (see [MeshService broadcasts](./mesh-service.md)) |
 | `broadcast(type, data, options?)`            | Broadcast to all nodes in the mesh                                                        |

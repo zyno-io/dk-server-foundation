@@ -43,6 +43,15 @@ class DelayedRegisterBackend<TMeta> implements MeshClientRegistryBackend<TMeta> 
         return true;
     }
 
+    async updateMetadata(clientId: string, nodeId: number, metadata: TMeta): Promise<boolean> {
+        const existing = this.clients.get(clientId);
+        if (!existing || existing.nodeId !== nodeId) {
+            return false;
+        }
+        existing.metadata = metadata;
+        return true;
+    }
+
     async getClient(clientId: string): Promise<RegisteredClient<TMeta> | undefined> {
         return this.clients.get(clientId);
     }
@@ -583,6 +592,100 @@ describe('MeshSrpcServer', () => {
         // Invoke via client (upstream) to verify SrpcServer.invoke path works
         const result = await client.invoke('uEcho', { message: 'hello' });
         assert.deepStrictEqual(result, { message: 'Echo: hello' });
+    });
+
+    it('updateClientMetadata updates registry and local cache', async () => {
+        const key = `srpc-${++keyCounter}`;
+        const server = createServer(key);
+        await server.meshStart();
+
+        const client = createClient(`/mesh-srpc-test-${key}`, 'client-meta');
+        await waitForConnection(client);
+        await sleepMs(200);
+
+        // Verify initial metadata
+        let regClient = await server.clientRegistry.getClient('client-meta');
+        assert.ok(regClient);
+        assert.deepStrictEqual(regClient.metadata, { userId: 'user-client-meta' });
+
+        // Update metadata
+        const updated = await server.updateClientMetadata('client-meta', { userId: 'updated-user' });
+        assert.strictEqual(updated, true);
+
+        // Verify registry was updated
+        regClient = await server.clientRegistry.getClient('client-meta');
+        assert.ok(regClient);
+        assert.deepStrictEqual(regClient.metadata, { userId: 'updated-user' });
+
+        // Verify local cache was updated — disconnect callback should receive updated metadata
+        const disconnected: { clientId: string; metadata: TestMeta }[] = [];
+        server.onClientDisconnected((clientId, metadata) => {
+            disconnected.push({ clientId, metadata });
+        });
+
+        client.disconnect();
+        await sleepMs(200);
+
+        assert.strictEqual(disconnected.length, 1);
+        assert.deepStrictEqual(disconnected[0].metadata, { userId: 'updated-user' });
+    });
+
+    it('updateClientMetadata returns false for non-existent client', async () => {
+        const key = `srpc-${++keyCounter}`;
+        const server = createServer(key);
+        await server.meshStart();
+
+        const updated = await server.updateClientMetadata('nonexistent', { userId: 'nope' });
+        assert.strictEqual(updated, false);
+    });
+
+    it('broadcast and registerBroadcastHandler work across nodes', async () => {
+        const key = `srpc-${++keyCounter}`;
+
+        // Need to type the server with broadcasts
+        type TestBroadcasts = {
+            testEvent: { value: number };
+        };
+
+        const server1 = new MeshSrpcServer<TestMeta, ClientMessage, ServerMessage, TestMeta, TestBroadcasts>({
+            logger: createLogger('MeshSrpcTest'),
+            clientMessage: ClientMessage,
+            serverMessage: ServerMessage,
+            wsPath: `/mesh-srpc-test-${key}`,
+            logLevel: false,
+            meshKey: key,
+            meshOptions: FAST_MESH,
+            extractMetadata: stream => ({ userId: stream.meta.userId })
+        });
+        servers.push(server1 as unknown as MeshSrpcServer<TestMeta, ClientMessage, ServerMessage>);
+
+        const server2 = new MeshSrpcServer<TestMeta, ClientMessage, ServerMessage, TestMeta, TestBroadcasts>({
+            logger: createLogger('MeshSrpcTest'),
+            clientMessage: ClientMessage,
+            serverMessage: ServerMessage,
+            wsPath: `/mesh-srpc-test-${key}`,
+            logLevel: false,
+            meshKey: key,
+            meshOptions: FAST_MESH,
+            extractMetadata: stream => ({ userId: stream.meta.userId })
+        });
+        servers.push(server2 as unknown as MeshSrpcServer<TestMeta, ClientMessage, ServerMessage>);
+
+        const received: { value: number; sender: number }[] = [];
+        server2.registerBroadcastHandler('testEvent', (data, senderInstanceId) => {
+            received.push({ value: data.value, sender: senderInstanceId });
+        });
+
+        await server1.meshStart();
+        await server2.meshStart();
+        await sleepMs(200);
+
+        await server1.broadcast('testEvent', { value: 42 });
+        await sleepMs(200);
+
+        assert.strictEqual(received.length, 1);
+        assert.strictEqual(received[0].value, 42);
+        assert.strictEqual(received[0].sender, server1.meshInstanceId);
     });
 
     it('meshStop cleans up registered clients', async () => {

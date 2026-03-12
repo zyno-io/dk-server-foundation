@@ -156,6 +156,29 @@ describe('MeshClientService', () => {
         await assert.rejects(svc2.invoke('client-1', 'echo', {}), ClientInvocationError);
     });
 
+    it('updateClientMetadata updates metadata in registry', async () => {
+        const key = `test-mcs-${++keyCounter}`;
+        const svc = createClientService(key, new Map());
+        await svc.start();
+
+        await svc.registerClient('client-1', { userId: 'u1' });
+
+        const updated = await svc.updateClientMetadata('client-1', { userId: 'u1-updated' });
+        assert.strictEqual(updated, true);
+
+        const client = await svc.clientRegistry.getClient('client-1');
+        assert.ok(client);
+        assert.deepStrictEqual(client.metadata, { userId: 'u1-updated' });
+    });
+
+    it('updateClientMetadata returns false when not running', async () => {
+        const key = `test-mcs-${++keyCounter}`;
+        const svc = createClientService(key, new Map());
+
+        const result = await svc.updateClientMetadata('client-1', { userId: 'u1' });
+        assert.strictEqual(result, false);
+    });
+
     it('unregisterClient returns ownership result', async () => {
         const key = `test-mcs-${++keyCounter}`;
         const svc1 = createClientService(key, new Map());

@@ -140,6 +140,14 @@ export class MeshSrpcServer<
         return this.meshClientService.clientRegistry;
     }
 
+    async updateClientMetadata(clientId: string, metadata: TRegistryMeta): Promise<boolean> {
+        const updated = await this.meshClientService.updateClientMetadata(clientId, metadata);
+        if (updated) {
+            this.clientMetadata.set(clientId, metadata);
+        }
+        return updated;
+    }
+
     onClientConnected(handler: (clientId: string, metadata: TRegistryMeta) => void | Promise<void>): void {
         this.connectedCallbacks.add(handler);
     }
