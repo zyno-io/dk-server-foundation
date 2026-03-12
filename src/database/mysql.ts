@@ -6,9 +6,9 @@ import { isNonUndefined } from '@deepkit/sql';
 import { databaseAnnotation, ReflectionKind, Type } from '@deepkit/type';
 import { PoolConfig } from 'mariadb';
 
+import { Coordinate } from '.';
 import { getAppConfig, r } from '../app/resolver';
 import { globalState } from '../app/state';
-import { Coordinate } from '.';
 import { BaseDatabase } from './common';
 
 export type MySQLDatabaseSession = DatabaseSession<MySQLDatabaseAdapter>;

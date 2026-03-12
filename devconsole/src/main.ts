@@ -1,6 +1,7 @@
 import { createApp } from 'vue';
-import App from './App.vue';
+
 import { api } from './api';
+import App from './App.vue';
 import { router } from './router';
 import { ws } from './ws';
 

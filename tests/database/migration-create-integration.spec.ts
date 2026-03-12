@@ -1,15 +1,15 @@
-import { describe, it, before, after } from 'node:test';
-import assert from 'node:assert/strict';
 import { ActiveRecord } from '@deepkit/orm';
 import { SQLDatabaseAdapter } from '@deepkit/sql';
 import { AutoIncrement, entity, Index, MaxLength, PrimaryKey, Unique } from '@deepkit/type';
+import assert from 'node:assert/strict';
+import { describe, it, before, after } from 'node:test';
 
 import { DateString } from '../../src';
 import { getDialect, Dialect } from '../../src/database/dialect';
-import { readEntitiesSchema } from '../../src/database/migration/create/entity-reader';
-import { readDatabaseSchema } from '../../src/database/migration/create/db-reader';
 import { compareSchemas } from '../../src/database/migration/create/comparator';
+import { readDatabaseSchema } from '../../src/database/migration/create/db-reader';
 import { generateDDL } from '../../src/database/migration/create/ddl-generator';
+import { readEntitiesSchema } from '../../src/database/migration/create/entity-reader';
 import { setNonInteractive } from '../../src/database/migration/create/prompt';
 import { forEachAdapter } from '../shared/db';
 
@@ -72,7 +72,7 @@ class MigIndexOptionsEntity extends ActiveRecord {
 const indexTestEntities = [MigIndexOptionsEntity];
 
 describe('migration:create integration', () => {
-    forEachAdapter(({ createFacade, type: adapterType }) => {
+    forEachAdapter(({ createFacade }) => {
         const tf = createFacade({ entities: testEntities });
         let dialect: Dialect;
 

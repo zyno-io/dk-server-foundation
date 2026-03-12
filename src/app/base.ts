@@ -24,10 +24,9 @@ import { BaseAppConfig } from './config';
 import { CustomConfigLoader } from './config.loader';
 import { isDevelopment, isTest } from './const';
 import { doDevPostAppStartup } from './dev';
-
+import { r } from './resolver';
 import { ShutdownListener } from './shutdown';
 import { DBProvider, globalState } from './state';
-import { r } from './resolver';
 
 const enableDevConsole = (isDevelopment && process.env.DEVCONSOLE_ENABLED !== 'false') || process.env.DEVCONSOLE_ENABLED === 'true';
 

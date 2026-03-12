@@ -1,8 +1,8 @@
-import { describe, it, before, after, mock } from 'node:test';
+import { LoggerInterface } from '@deepkit/logger';
 import assert from 'node:assert/strict';
+import { describe, it, before, after, mock } from 'node:test';
 
 import { createDistributedMethod, disconnectAllRedis, sleepMs, TestingHelpers } from '../../src';
-import { LoggerInterface } from '@deepkit/logger';
 
 describe('createDistributedMethod', () => {
     const tf = TestingHelpers.createTestingFacade({

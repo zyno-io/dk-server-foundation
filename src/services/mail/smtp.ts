@@ -1,8 +1,9 @@
 import { ScopedLogger } from '@deepkit/logger';
 import { createTransport } from 'nodemailer';
 
-import { BaseAppConfig } from '../../app';
 import type { MailProvider, PreparedMessageProperties } from '.';
+
+import { BaseAppConfig } from '../../app';
 
 export class SmtpProvider implements MailProvider {
     private transporter = createTransport({

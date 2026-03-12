@@ -1,10 +1,11 @@
-import { timingSafeEqual } from 'crypto';
 import { HttpRequest, HttpUnauthorizedError, RouteParameterResolver, RouteParameterResolverContext } from '@deepkit/http';
 import { ScopedLogger } from '@deepkit/logger';
 import { ActiveRecordClassType } from '@deepkit/orm';
+import { timingSafeEqual } from 'crypto';
 
 // can't import app here or bad things happen!!
 import type { BaseAppConfig } from '../app';
+
 import { JWT, ParsedJwt } from '../auth';
 import { getEntity, getEntityOrUndefined } from '../database';
 import { HttpMiddleware } from './middleware';

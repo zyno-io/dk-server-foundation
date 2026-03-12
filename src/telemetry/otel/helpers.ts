@@ -1,5 +1,6 @@
-import { Attributes, ROOT_CONTEXT, Span, SpanKind, SpanStatusCode, trace, Tracer } from '@opentelemetry/api';
 import type { PrometheusExporter } from '@opentelemetry/exporter-prometheus';
+
+import { Attributes, ROOT_CONTEXT, Span, SpanKind, SpanStatusCode, trace, Tracer } from '@opentelemetry/api';
 import { isNativeError } from 'util/types';
 
 export const OtelState = {

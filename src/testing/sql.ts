@@ -1,9 +1,10 @@
-import { mock } from 'node:test';
 import { ClassType } from '@deepkit/core';
 import { MySQLDatabaseAdapter } from '@deepkit/mysql';
 import { DatabasePersistence, MemoryDatabaseAdapter, MemoryQueryFactory, OrmEntity } from '@deepkit/orm';
 import { PostgresDatabaseAdapter } from '@deepkit/postgres';
 import { ReflectionClass } from '@deepkit/type';
+import { mock } from 'node:test';
+
 import { EntityFields } from '../database';
 
 export class SqlTestingHelper {

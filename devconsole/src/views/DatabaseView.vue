@@ -73,6 +73,7 @@
 <script setup lang="ts">
 import { ref, onMounted, nextTick } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+
 import { api, type EntityInfo, type QueryResult } from '../api';
 
 const route = useRoute();

@@ -1,7 +1,8 @@
-import { mock, before, after, beforeEach, afterEach } from 'node:test';
 import { HttpRequest, MemoryHttpResponse } from '@deepkit/http';
 import { MySQLConnectionPool, MySQLDatabaseAdapter } from '@deepkit/mysql';
 import { PostgresConnectionPool, PostgresDatabaseAdapter } from '@deepkit/postgres';
+import { mock, before, after, beforeEach, afterEach } from 'node:test';
+
 import { TestingFacade } from '.';
 
 function installDbRejectionHooks() {

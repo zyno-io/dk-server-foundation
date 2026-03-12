@@ -7,8 +7,8 @@ import { pino, stdTimeFunctions } from 'pino';
 
 import { isDevFeatureEnabled } from '../app/config';
 import { isDevelopment, isTest } from '../app/const';
-import { DecoratedError, getContext, isError, reportError, withContextData } from '../helpers';
 import { r } from '../app/resolver';
+import { DecoratedError, getContext, isError, reportError, withContextData } from '../helpers';
 
 export const shouldUsePinoPretty = isDevFeatureEnabled(process.env.ENABLE_PINO_PRETTY);
 export const shouldUseSingleLine = isDevFeatureEnabled(process.env.ENABLE_PINO_SINGLE_LINE);

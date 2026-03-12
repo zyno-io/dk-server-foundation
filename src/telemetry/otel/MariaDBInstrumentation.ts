@@ -16,13 +16,14 @@
  * limitations under the License.
  */
 
+import type * as mariadbTypes from 'mariadb';
+
 import { Attributes, MeterProvider, UpDownCounter } from '@opentelemetry/api';
 import { InstrumentationBase, InstrumentationNodeModuleDefinition, isWrapped } from '@opentelemetry/instrumentation';
 import { AttributeNames } from '@opentelemetry/instrumentation-mysql/build/src/AttributeNames';
 import { MySQLInstrumentationConfig } from '@opentelemetry/instrumentation-mysql/build/src/types';
 import { getDbQueryText, getDbValues, getSpanName } from '@opentelemetry/instrumentation-mysql/build/src/utils';
 import { ATTR_DB_QUERY_TEXT, ATTR_DB_SYSTEM_NAME, DB_SYSTEM_NAME_VALUE_MARIADB } from '@opentelemetry/semantic-conventions';
-import type * as mariadbTypes from 'mariadb';
 
 import { withSpan } from './helpers';
 

@@ -1,5 +1,5 @@
-import { describe, it, mock } from 'node:test';
 import assert from 'node:assert/strict';
+import { describe, it, mock } from 'node:test';
 import { Readable, Writable } from 'stream';
 
 import { PipeError, safePipe, withResourceCleanup } from '../../src/helpers/io/stream';

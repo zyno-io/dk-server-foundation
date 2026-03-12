@@ -88,9 +88,10 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
+
 import { api, type OverviewData, type ProcessInfo } from '../api';
-import { ws, connected } from '../ws';
 import { uptimeSeconds, formatUptime, setUptimeFromMs } from '../composables/useUptime';
+import { ws, connected } from '../ws';
 
 const data = ref<OverviewData | null>(null);
 const proc = ref<ProcessInfo | null>(null);

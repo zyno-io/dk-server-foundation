@@ -8,8 +8,8 @@ import { writeFile } from 'fs/promises';
 import path from 'path';
 import { stringify } from 'yaml';
 
-import { getAppConfig } from './resolver';
 import { isDevFeatureEnabled } from './config';
+import { getAppConfig } from './resolver';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function doDevPostAppStartup(app: App<any>) {

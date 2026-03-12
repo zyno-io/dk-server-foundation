@@ -2,6 +2,7 @@ import { UniqueConstraintFailure } from '@deepkit/orm';
 import { SQLDatabaseAdapter } from '@deepkit/sql';
 import { Job, QueueEvents } from 'bullmq';
 
+import { BaseAppConfig } from '../../app';
 import { getAppConfig } from '../../app/resolver';
 import { DBProvider } from '../../app/state';
 import { createPersistedEntity, getDialect, tableExistsSql } from '../../database';
@@ -9,7 +10,6 @@ import { createRedisOptions } from '../../helpers/redis/redis';
 import { createLogger, ExtendedLogger } from '../logger';
 import { JobEntity } from './entity';
 import { WorkerQueueRegistry } from './queue';
-import { BaseAppConfig } from '../../app';
 
 export class WorkerRecorderService {
     private appConfig: BaseAppConfig;

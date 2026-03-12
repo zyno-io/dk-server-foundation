@@ -1,7 +1,8 @@
 import { ClassType } from '@deepkit/core';
-import { globalState } from './state';
-import { BaseAppConfig } from './config';
 import { Injector, InjectorModule } from '@deepkit/injector';
+
+import { BaseAppConfig } from './config';
+import { globalState } from './state';
 
 const resolveCache = new WeakMap();
 export function resolve<T>(type: ClassType<T>): T {

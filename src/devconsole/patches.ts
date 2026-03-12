@@ -2,11 +2,11 @@
 import type { App } from '@deepkit/app';
 import type { HttpRequest, HttpResponse } from '@deepkit/http';
 
-import { createLogger } from '../services';
 import { uuid7 } from '../helpers/utils/uuid';
-import { createDevConsoleSrpcObserver, identifyMessageType } from './devconsole.srpc';
+import { createLogger } from '../services';
 import { DevConsoleController } from './devconsole.controller';
 import { DevConsoleLocalhostMiddleware } from './devconsole.middleware';
+import { createDevConsoleSrpcObserver, identifyMessageType } from './devconsole.srpc';
 import { DevConsoleStore, type DevConsoleDatabaseQueryEntry, type DevConsoleErrorInfo, type DevConsoleMutexEntry } from './devconsole.store';
 
 const _skipObserverSet = new WeakSet<object>();

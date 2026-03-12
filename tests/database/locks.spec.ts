@@ -1,5 +1,5 @@
-import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { describe, it, before, after } from 'node:test';
 
 import { createSemaphore, sleepSecs } from '../../src';
 import { createTestingFacadeWithDatabase, forEachAdapter } from '../shared/db';

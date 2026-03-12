@@ -1,8 +1,8 @@
-import { describe, it, before, after } from 'node:test';
-import assert from 'node:assert/strict';
 import { ActiveRecord, DatabaseAdapter, DatabaseEntityRegistry, DatabaseSession } from '@deepkit/orm';
 import { SQLDatabaseAdapter } from '@deepkit/sql';
 import { AutoIncrement, entity, MySQL, PrimaryKey, UUID } from '@deepkit/type';
+import assert from 'node:assert/strict';
+import { describe, it, before, after } from 'node:test';
 
 import { ApiName, createPersistedEntity, getEntityFields, MySQLCoordinate, NullableMySQLCoordinate, UuidString } from '../../src';
 import {

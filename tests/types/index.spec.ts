@@ -1,7 +1,6 @@
-import { it } from 'node:test';
-import assert from 'node:assert/strict';
-
 import { deserialize } from '@deepkit/type';
+import assert from 'node:assert/strict';
+import { it } from 'node:test';
 
 import { EMAIL_REGEX, TrimmedString } from '../../src';
 import { PhoneNumber, PhoneNumberNANP } from '../../src/types/phone';

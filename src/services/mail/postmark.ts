@@ -1,8 +1,9 @@
 import { ScopedLogger } from '@deepkit/logger';
 import { ServerClient } from 'postmark';
 
-import { BaseAppConfig } from '../../app';
 import type { MailProvider, PreparedMessageProperties } from '.';
+
+import { BaseAppConfig } from '../../app';
 
 export class PostmarkProvider implements MailProvider {
     private postmarkClient = new ServerClient(this.config.POSTMARK_SECRET!);

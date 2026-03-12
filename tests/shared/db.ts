@@ -1,6 +1,6 @@
-import { describe } from 'node:test';
 import { Database } from '@deepkit/orm';
 import { SQLDatabaseAdapter } from '@deepkit/sql';
+import { describe } from 'node:test';
 
 import {
     BaseAppConfig,

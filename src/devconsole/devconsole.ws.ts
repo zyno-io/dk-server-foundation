@@ -1,9 +1,8 @@
-import { inspect } from 'util';
-
 import { App } from '@deepkit/app';
 import { HttpRouter } from '@deepkit/http';
 import { ScopedLogger } from '@deepkit/logger';
 import { ReflectionClass } from '@deepkit/type';
+import { inspect } from 'util';
 
 import { DevConsoleClientMessage, DevConsoleServerMessage, UReplCompleteItem } from '../../resources/proto/generated/devconsole/devconsole';
 import { getAppConfig } from '../app/resolver';

@@ -35,9 +35,10 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, onUnmounted } from 'vue';
 import { useRoute } from 'vue-router';
+
 import { api, type ProcessInfo } from '../api';
-import { ws } from '../ws';
 import { uptimeSeconds, formatUptime, setUptimeFromSeconds } from '../composables/useUptime';
+import { ws } from '../ws';
 
 const connected = ws.connected;
 

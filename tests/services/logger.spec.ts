@@ -1,7 +1,7 @@
-import { describe, it, before, after, afterEach, mock } from 'node:test';
-import assert from 'node:assert/strict';
 import { Logger, LoggerLevel } from '@deepkit/logger';
 import debug from 'debug';
+import assert from 'node:assert/strict';
+import { describe, it, before, after, afterEach, mock } from 'node:test';
 
 import { BaseAppConfig, createApp, createLogger, DecoratedError, ExtendedLogger, pinoLogger, setGlobalErrorReporter } from '../../src';
 

@@ -1,7 +1,7 @@
-import { describe, it, mock } from 'node:test';
-import assert from 'node:assert/strict';
 import { createServer } from 'http';
 import { Socket } from 'net';
+import assert from 'node:assert/strict';
+import { describe, it, mock } from 'node:test';
 import WebSocket from 'ws';
 
 import { installWebSocketUpgradeHandler } from '../../src/srpc/WebSocketUpgradeHandler';

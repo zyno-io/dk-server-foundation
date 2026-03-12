@@ -44,6 +44,7 @@
 
 <script setup lang="ts">
 import { ref, nextTick, onMounted } from 'vue';
+
 import { ws } from '../ws';
 
 interface ReplEntry {
@@ -106,6 +107,7 @@ async function requestCompletions() {
     const cursorPos = el.selectionStart ?? code.value.length;
     try {
         const reply = await ws.invoke('uReplComplete', { code: code.value, cursorPos });
+        // oxlint-disable-next-line typescript/no-explicit-any
         const response = (reply as any).uReplCompleteResponse;
         if (!response) return;
 
@@ -182,6 +184,7 @@ async function run() {
 
     try {
         const reply = await ws.invoke('uReplEval', { code: src });
+        // oxlint-disable-next-line typescript/no-explicit-any
         const response = (reply as any).uReplEvalResponse ?? {};
         history.value.push({
             code: src,

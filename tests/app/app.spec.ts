@@ -1,6 +1,6 @@
-import { describe, it } from 'node:test';
-import assert from 'node:assert/strict';
 import { http, HttpQueries, HttpRequest, HttpResponse } from '@deepkit/http';
+import assert from 'node:assert/strict';
+import { describe, it } from 'node:test';
 
 import { TestingHelpers } from '../../src';
 import { BaseAppConfig } from '../../src/app';

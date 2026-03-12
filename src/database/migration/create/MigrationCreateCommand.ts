@@ -1,14 +1,14 @@
 import { cli, Flag } from '@deepkit/app';
 import { SQLDatabaseAdapter } from '@deepkit/sql';
 
-import { DBProvider } from '../../../app/state';
 import { getAppConfig } from '../../../app/resolver';
+import { DBProvider } from '../../../app/state';
 import { createLogger, pinoLogger } from '../../../services';
 import { getDialect } from '../../dialect';
-import { readEntitiesSchema } from './entity-reader';
-import { readAllTableNames, readDatabaseSchema } from './db-reader';
 import { compareSchemas } from './comparator';
+import { readAllTableNames, readDatabaseSchema } from './db-reader';
 import { generateDDL } from './ddl-generator';
+import { readEntitiesSchema } from './entity-reader';
 import { generateMigrationFile } from './file-generator';
 import { promptMigrationDescription, setNonInteractive } from './prompt';
 import { INTERNAL_TABLES } from './schema-model';

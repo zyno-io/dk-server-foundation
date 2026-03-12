@@ -125,10 +125,11 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
+
 import { api, type WorkerJob } from '../api';
-import { ws, connected } from '../ws';
 import JsonViewer from '../components/JsonViewer.vue';
 import { useResizePanel } from '../composables/useResizePanel';
+import { ws, connected } from '../ws';
 
 const router = useRouter();
 const route = useRoute();

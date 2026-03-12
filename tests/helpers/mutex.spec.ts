@@ -1,5 +1,5 @@
-import { describe, it, before, after, mock } from 'node:test';
 import assert from 'node:assert/strict';
+import { describe, it, before, after, mock } from 'node:test';
 
 import { disconnectAllRedis, flattenMutexKey, MutexAcquisitionError, sleepMs, TestingHelpers, withMutex, withMutexes } from '../../src';
 

@@ -1,5 +1,5 @@
-import assert from 'node:assert/strict';
 import _ from 'lodash';
+import assert from 'node:assert/strict';
 
 const ASYMMETRIC_MATCHER = Symbol.for('asymmetricMatcher');
 

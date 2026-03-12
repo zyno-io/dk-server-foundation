@@ -1,7 +1,7 @@
-import { describe, it, before, after } from 'node:test';
-import assert from 'node:assert/strict';
 import { ActiveRecord, DatabaseSession, DatabaseAdapter } from '@deepkit/orm';
 import { AutoIncrement, entity, PrimaryKey } from '@deepkit/type';
+import assert from 'node:assert/strict';
+import { describe, it, before, after } from 'node:test';
 
 import { createPersistedEntity } from '../../src';
 import { createTestingFacadeWithDatabase } from '../shared/db';

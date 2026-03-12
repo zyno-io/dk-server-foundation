@@ -1,6 +1,5 @@
-import { resolve } from 'path';
-
 import { http, HttpNotFoundError, HttpRequest, HttpResponse } from '@deepkit/http';
+import { resolve } from 'path';
 import send from 'send';
 
 import { serializeOpenApiSchema } from '../app/dev';

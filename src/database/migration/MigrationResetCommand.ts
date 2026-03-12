@@ -3,15 +3,15 @@ import { SQLDatabaseAdapter } from '@deepkit/sql';
 import { existsSync, mkdirSync, readdirSync, unlinkSync, writeFileSync } from 'fs';
 import path from 'path';
 
-import { DBProvider } from '../../app/state';
 import { getAppConfig } from '../../app/resolver';
+import { DBProvider } from '../../app/state';
 import { createLogger } from '../../services';
 import { getDialect } from '../dialect';
-import { getSourceMigrationsDir } from './helpers';
-import { readEntitiesSchema } from './create/entity-reader';
 import { generateDDL } from './create/ddl-generator';
+import { readEntitiesSchema } from './create/entity-reader';
 import { buildFileContent } from './create/file-generator';
 import { SchemaDiff } from './create/schema-model';
+import { getSourceMigrationsDir } from './helpers';
 
 @cli.controller('migration:reset')
 export class MigrationResetCommand {

@@ -1,3 +1,4 @@
+import { promptRename } from './prompt';
 import {
     ColumnModification,
     ColumnSchema,
@@ -9,7 +10,6 @@ import {
     TableDiff,
     TableSchema
 } from './schema-model';
-import { promptRename } from './prompt';
 
 export async function compareSchemas(
     entitySchema: DatabaseSchema,

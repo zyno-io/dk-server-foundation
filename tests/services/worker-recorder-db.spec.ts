@@ -1,13 +1,13 @@
-import { describe, it, before, after } from 'node:test';
-import assert from 'node:assert/strict';
 import { Worker } from 'bullmq';
+import assert from 'node:assert/strict';
+import { describe, it, before, after } from 'node:test';
 
 import { disconnectAllRedis, sleepMs } from '../../src';
 import { DBProvider } from '../../src/app/state';
 import { createRedisOptions } from '../../src/helpers/redis/redis';
 import { JobEntity } from '../../src/services/worker/entity';
-import { WorkerRecorderService } from '../../src/services/worker/recorder';
 import { WorkerQueueRegistry } from '../../src/services/worker/queue';
+import { WorkerRecorderService } from '../../src/services/worker/recorder';
 import { forEachAdapter } from '../shared/db';
 
 describe('WorkerRecorderService job recording', () => {

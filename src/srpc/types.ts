@@ -1,5 +1,6 @@
 import type { BinaryReader, BinaryWriter } from '@bufbuild/protobuf/wire';
 import type { ClassType } from '@deepkit/core';
+
 import { ScopedLogger } from '@deepkit/logger';
 import WebSocket from 'ws';
 

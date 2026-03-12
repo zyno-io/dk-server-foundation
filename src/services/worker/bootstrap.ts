@@ -3,8 +3,8 @@ import { eventDispatcher } from '@deepkit/event';
 import { onServerMainBootstrapDone, onServerShutdown } from '@deepkit/framework';
 import { Redis } from 'ioredis';
 
-import { getAppConfig } from '../../app/resolver';
 import { isDevelopment } from '../../app/const';
+import { getAppConfig } from '../../app/resolver';
 import { globalState } from '../../app/state';
 import { WorkerQueueJobCommand, WorkerStartCommand } from './cli';
 import { JobEntity } from './entity';

@@ -1,5 +1,5 @@
-import type { DevConsoleStore } from './devconsole.store';
 import type { SrpcStream } from '../srpc/types';
+import type { DevConsoleStore } from './devconsole.store';
 
 export interface SrpcMessageObserver {
     onInboundMessage?(stream: SrpcStream, messageType: string, data: Record<string, unknown>): void;

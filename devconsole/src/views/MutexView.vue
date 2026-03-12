@@ -67,6 +67,7 @@
 
 <script setup lang="ts">
 import { ref, watch, onMounted, onUnmounted } from 'vue';
+
 import { api, type MutexEntry } from '../api';
 import { ws, connected } from '../ws';
 

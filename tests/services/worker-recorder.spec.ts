@@ -1,5 +1,5 @@
-import { describe, it, before, after, afterEach, mock } from 'node:test';
 import assert from 'node:assert/strict';
+import { describe, it, before, after, afterEach, mock } from 'node:test';
 
 import { disconnectAllRedis, LeaderService, sleepMs, TestingHelpers } from '../../src';
 

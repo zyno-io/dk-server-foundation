@@ -1,9 +1,8 @@
+import { ApplicationServer } from '@deepkit/framework';
 import { ScopedLogger } from '@deepkit/logger';
 import { createHmac } from 'crypto';
 import { Readable } from 'stream';
 import WebSocket from 'ws';
-
-import { ApplicationServer } from '@deepkit/framework';
 
 import { ClientMessage, ServerMessage } from '../resources/proto/generated/test/test';
 import { AutoStart, BaseAppConfig } from '../src/app';

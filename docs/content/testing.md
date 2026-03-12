@@ -57,19 +57,19 @@ Creates a `TestingFacade` instance. The first argument is app options (same as `
 
 ### `ITestingFacadeOptions`
 
-| Option               | Type                        | Default                        | Description                                                     |
-| -------------------- | --------------------------- | ------------------------------ | --------------------------------------------------------------- |
-| `enableDatabase`     | `boolean`                   | `false`                        | Create an isolated test database                                |
+| Option               | Type                        | Default                        | Description                                                      |
+| -------------------- | --------------------------- | ------------------------------ | ---------------------------------------------------------------- |
+| `enableDatabase`     | `boolean`                   | `false`                        | Create an isolated test database                                 |
 | `dbAdapter`          | `'postgres' \| 'mysql'`     | —                              | Database adapter to use (required when `enableDatabase` is true) |
-| `enableMigrations`   | `boolean`                   | `true` (when database enabled) | Run migrations after database creation. Set to `false` to skip. |
-| `autoSeedData`       | `boolean`                   | `false`                        | Run `seedData` automatically before each test                   |
-| `databasePrefix`     | `string`                    | `'test'`                       | Prefix for test database names                                  |
-| `onBeforeStart`      | `(facade) => Promise<void>` | —                              | Hook before app starts                                          |
-| `onStart`            | `(facade) => Promise<void>` | —                              | Hook after app starts                                           |
-| `onBeforeStop`       | `(facade) => Promise<void>` | —                              | Hook before app stops                                           |
-| `onStop`             | `(facade) => Promise<void>` | —                              | Hook after app stops                                            |
-| `seedData`           | `(facade) => Promise<void>` | —                              | Seed test data                                                  |
-| `defaultTestHeaders` | `Record<string, string>`    | —                              | Default headers for mock requests                               |
+| `enableMigrations`   | `boolean`                   | `true` (when database enabled) | Run migrations after database creation. Set to `false` to skip.  |
+| `autoSeedData`       | `boolean`                   | `false`                        | Run `seedData` automatically before each test                    |
+| `databasePrefix`     | `string`                    | `'test'`                       | Prefix for test database names                                   |
+| `onBeforeStart`      | `(facade) => Promise<void>` | —                              | Hook before app starts                                           |
+| `onStart`            | `(facade) => Promise<void>` | —                              | Hook after app starts                                            |
+| `onBeforeStop`       | `(facade) => Promise<void>` | —                              | Hook before app stops                                            |
+| `onStop`             | `(facade) => Promise<void>` | —                              | Hook after app stops                                             |
+| `seedData`           | `(facade) => Promise<void>` | —                              | Seed test data                                                   |
+| `defaultTestHeaders` | `Record<string, string>`    | —                              | Default headers for mock requests                                |
 
 ### Facade Methods
 

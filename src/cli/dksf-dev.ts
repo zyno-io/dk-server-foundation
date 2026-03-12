@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
 import { ChildProcess, spawn, spawnSync } from 'child_process';
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, unlinkSync, writeFileSync } from 'fs';
 import { createHash } from 'crypto';
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, unlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join, dirname } from 'path';
 import { setTimeout as sleep } from 'timers/promises';

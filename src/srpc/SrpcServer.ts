@@ -1,5 +1,6 @@
 import { ApplicationServer } from '@deepkit/framework';
 import { ScopedLogger } from '@deepkit/logger';
+import { uuid } from '@deepkit/type';
 import { createHmac, timingSafeEqual } from 'crypto';
 import { IncomingMessage } from 'http';
 import WebSocket from 'ws';
@@ -9,7 +10,6 @@ import { uuid7 } from '../helpers';
 import { withLoggerContext } from '../services';
 import { getTraceContext, withRemoteSpan, withSpan } from '../telemetry';
 import { SrpcByteStream } from './SrpcByteStream';
-import { installWebSocketUpgradeHandler } from './WebSocketUpgradeHandler';
 import {
     BaseMessage,
     HandlerRequestData,
@@ -28,7 +28,7 @@ import {
     SrpcStream,
     TSrpcMessageHandlerFnOrClass
 } from './types';
-import { uuid } from '@deepkit/type';
+import { installWebSocketUpgradeHandler } from './WebSocketUpgradeHandler';
 
 const StreamInfoSymbol = Symbol('srpc-info');
 

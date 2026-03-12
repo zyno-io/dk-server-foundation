@@ -1,5 +1,5 @@
-import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { describe, it } from 'node:test';
 
 import { compareSchemas } from '../../src/database/migration/create/comparator';
 import { COMMENT_PREFIX, generateDDL } from '../../src/database/migration/create/ddl-generator';

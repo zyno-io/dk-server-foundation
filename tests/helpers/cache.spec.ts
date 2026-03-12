@@ -1,5 +1,5 @@
-import { describe, it, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
+import { describe, it, before, after, beforeEach } from 'node:test';
 
 import { Cache } from '../../src/helpers/redis/cache';
 import { TestingHelpers } from '../../src/testing';

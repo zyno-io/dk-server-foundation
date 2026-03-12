@@ -1,8 +1,9 @@
+import type { PackageJson } from 'type-fest';
+
 import { readFileSync } from 'fs';
 import { memoize } from 'lodash';
 import { join } from 'path';
 import { cwd } from 'process';
-import type { PackageJson } from 'type-fest';
 
 export const getPackageJson: () => PackageJson | undefined = memoize(() => {
     try {

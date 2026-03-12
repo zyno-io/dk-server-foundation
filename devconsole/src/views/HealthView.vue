@@ -36,6 +36,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
+
 import { api, type HealthCheckResult } from '../api';
 
 const data = ref<HealthCheckResult[]>([]);
