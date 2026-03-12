@@ -22,6 +22,11 @@ type TestMessages = {
     fail: { request: {}; response: {} };
 };
 
+type TestBroadcasts = {
+    configUpdated: { keys: string[] };
+    userLoggedOut: { userId: string };
+};
+
 const FAST_OPTIONS = {
     heartbeatIntervalMs: 200,
     nodeTtlMs: 600,
@@ -46,7 +51,8 @@ describe('MeshService', () => {
         await disconnectAllRedis();
     });
 
-    let services: MeshService<TestMessages>[];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let services: MeshService<any, any>[];
 
     beforeEach(() => {
         services = [];
@@ -58,6 +64,12 @@ describe('MeshService', () => {
 
     function createService(key: string, options = FAST_OPTIONS): MeshService<TestMessages> {
         const svc = new MeshService<TestMessages>(key, options);
+        services.push(svc);
+        return svc;
+    }
+
+    function createBroadcastService(key: string, options = FAST_OPTIONS): MeshService<TestMessages, TestBroadcasts> {
+        const svc = new MeshService<TestMessages, TestBroadcasts>(key, options);
         services.push(svc);
         return svc;
     }
@@ -841,5 +853,191 @@ describe('MeshService', () => {
     it('getNodes throws if not running', async () => {
         const svc = createService('MeshTestGetNodesNotRunning');
         await assert.rejects(svc.getNodes(), { message: 'MeshService is not running' });
+    });
+
+    // --- Broadcast tests ---
+
+    it('broadcasts to all nodes', async () => {
+        const svc1 = createBroadcastService('MeshTestBroadcast1');
+        const svc2 = createBroadcastService('MeshTestBroadcast1');
+
+        const received1: { data: unknown; sender: number }[] = [];
+        const received2: { data: unknown; sender: number }[] = [];
+
+        svc1.registerBroadcastHandler('configUpdated', (data, senderId) => {
+            received1.push({ data, sender: senderId });
+        });
+        svc2.registerBroadcastHandler('configUpdated', (data, senderId) => {
+            received2.push({ data, sender: senderId });
+        });
+
+        await svc1.start();
+        await svc2.start();
+        await sleepMs(100);
+
+        await svc1.broadcast('configUpdated', { keys: ['flag-a'] });
+        await sleepMs(200);
+
+        // svc1 should receive its own broadcast (local delivery)
+        assert.strictEqual(received1.length, 1);
+        assert.deepStrictEqual(received1[0].data, { keys: ['flag-a'] });
+        assert.strictEqual(received1[0].sender, svc1.instanceId);
+
+        // svc2 should receive the broadcast via pub/sub
+        assert.strictEqual(received2.length, 1);
+        assert.deepStrictEqual(received2[0].data, { keys: ['flag-a'] });
+        assert.strictEqual(received2[0].sender, svc1.instanceId);
+    });
+
+    it('broadcast skipSelf does not deliver locally', async () => {
+        const svc1 = createBroadcastService('MeshTestBroadcastSkipSelf');
+        const svc2 = createBroadcastService('MeshTestBroadcastSkipSelf');
+
+        const received1: unknown[] = [];
+        const received2: unknown[] = [];
+
+        svc1.registerBroadcastHandler('userLoggedOut', data => {
+            received1.push(data);
+        });
+        svc2.registerBroadcastHandler('userLoggedOut', data => {
+            received2.push(data);
+        });
+
+        await svc1.start();
+        await svc2.start();
+        await sleepMs(100);
+
+        await svc1.broadcast('userLoggedOut', { userId: '123' }, { skipSelf: true });
+        await sleepMs(200);
+
+        assert.strictEqual(received1.length, 0);
+        assert.strictEqual(received2.length, 1);
+        assert.deepStrictEqual(received2[0], { userId: '123' });
+    });
+
+    it('broadcast with multiple types routes correctly', async () => {
+        const svc1 = createBroadcastService('MeshTestBroadcastMultiType');
+        const svc2 = createBroadcastService('MeshTestBroadcastMultiType');
+
+        const configReceived: unknown[] = [];
+        const logoutReceived: unknown[] = [];
+
+        svc2.registerBroadcastHandler('configUpdated', data => {
+            configReceived.push(data);
+        });
+        svc2.registerBroadcastHandler('userLoggedOut', data => {
+            logoutReceived.push(data);
+        });
+
+        await svc1.start();
+        await svc2.start();
+        await sleepMs(100);
+
+        await svc1.broadcast('configUpdated', { keys: ['a'] });
+        await svc1.broadcast('userLoggedOut', { userId: '456' });
+        await sleepMs(200);
+
+        assert.strictEqual(configReceived.length, 1);
+        assert.strictEqual(logoutReceived.length, 1);
+    });
+
+    it('broadcast ignores messages after stop', async () => {
+        const svc = createBroadcastService('MeshTestBroadcastAfterStop');
+        await assert.rejects(svc.broadcast('configUpdated', { keys: [] }), { message: 'MeshService is not running' });
+    });
+
+    it('broadcast self-receive when no other nodes exist', async () => {
+        const svc = createBroadcastService('MeshTestBroadcastSelfOnly');
+        const received: unknown[] = [];
+
+        svc.registerBroadcastHandler('configUpdated', data => {
+            received.push(data);
+        });
+
+        await svc.start();
+
+        await svc.broadcast('configUpdated', { keys: ['solo'] });
+        await sleepMs(100);
+
+        assert.strictEqual(received.length, 1);
+        assert.deepStrictEqual(received[0], { keys: ['solo'] });
+    });
+
+    it('broadcast handler error is caught without crashing', async () => {
+        const svc1 = createBroadcastService('MeshTestBroadcastHandlerErr');
+        const svc2 = createBroadcastService('MeshTestBroadcastHandlerErr');
+
+        const received: unknown[] = [];
+
+        svc1.registerBroadcastHandler('configUpdated', () => {
+            throw new Error('handler boom');
+        });
+        // Register a second handler on a different type to verify service is still working
+        svc1.registerBroadcastHandler('userLoggedOut', data => {
+            received.push(data);
+        });
+
+        await svc1.start();
+        await svc2.start();
+        await sleepMs(100);
+
+        // Send the broadcast that will trigger the error
+        await svc2.broadcast('configUpdated', { keys: ['x'] });
+        await sleepMs(200);
+
+        // Service should still be running
+        assert.strictEqual((svc1 as any).running, true);
+
+        // Other handlers should still work
+        await svc2.broadcast('userLoggedOut', { userId: 'u1' });
+        await sleepMs(200);
+
+        assert.strictEqual(received.length, 1);
+    });
+
+    it('broadcast with no registered handler is silently ignored', async () => {
+        const svc1 = createBroadcastService('MeshTestBroadcastNoHandler');
+        const svc2 = createBroadcastService('MeshTestBroadcastNoHandler');
+
+        // svc2 has no broadcast handlers registered
+        await svc1.start();
+        await svc2.start();
+        await sleepMs(100);
+
+        // Should not throw
+        await svc1.broadcast('configUpdated', { keys: ['orphan'] });
+        await sleepMs(200);
+
+        // Both services should still be running
+        assert.strictEqual((svc1 as any).running, true);
+        assert.strictEqual((svc2 as any).running, true);
+    });
+
+    it('stop before start does not skip cleanup of instanceId 0', async () => {
+        const svc = createService('MeshTestStopBeforeStart2');
+        // Should not throw and instanceId should remain 0
+        await svc.stop();
+        assert.strictEqual(svc.instanceId, 0);
+    });
+
+    // --- Per-request timeout tests ---
+
+    it('per-request timeout overrides service default', async () => {
+        const svc = createService('MeshTestPerReqTimeout', {
+            ...FAST_OPTIONS,
+            requestTimeoutMs: 5000 // high default
+        });
+
+        svc.registerHandler('echo', data => ({ text: data.text }));
+        await svc.start();
+
+        // Invoke on a non-existent node with per-request timeout of 200ms
+        // Should fail faster than the 5000ms default
+        const start = Date.now();
+        await assert.rejects(svc.invoke(99999, 'echo', { text: 'hello' }, 200), MeshRequestTimeoutError);
+        const elapsed = Date.now() - start;
+
+        // Should have timed out in roughly 200ms, not 5000ms
+        assert.ok(elapsed < 1000, `Expected timeout within ~200ms, got ${elapsed}ms`);
     });
 });

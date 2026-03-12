@@ -42,6 +42,9 @@ console.log(result.status); // fully typed
 
 // Calling your own instance ID routes directly to the local handler (no pub/sub)
 const local = await mesh.invoke(mesh.instanceId, 'getStatus', { verbose: false });
+
+// Per-request timeout (overrides the service-level default)
+const fast = await mesh.invoke(targetInstanceId, 'getStatus', { verbose: false }, 2000);
 ```
 
 ### List nodes in the mesh
@@ -65,6 +68,35 @@ mesh.setNodeCleanedUpCallback(async instanceId => {
 });
 ```
 
+### Broadcast to all nodes
+
+Fire-and-forget messages to every node in the mesh. Unlike `invoke`, broadcasts have no response.
+
+```typescript
+import { MeshService, MeshBroadcastMap } from '@zyno-io/dk-server-foundation';
+
+type MyBroadcasts = {
+    configUpdated: { keys: string[] };
+    userLoggedOut: { userId: string };
+};
+
+const mesh = new MeshService<MyMessages, MyBroadcasts>('my-app');
+
+// Register handlers for broadcast types
+mesh.registerBroadcastHandler('configUpdated', (data, senderInstanceId) => {
+    console.log(`Config update from node ${senderInstanceId}:`, data.keys);
+    reloadConfig(data.keys);
+});
+
+await mesh.start();
+
+// Broadcast to all nodes (including self)
+await mesh.broadcast('configUpdated', { keys: ['feature-flags'] });
+
+// Skip self-delivery
+await mesh.broadcast('userLoggedOut', { userId: '123' }, { skipSelf: true });
+```
+
 ### Graceful shutdown
 
 ```typescript
@@ -73,7 +105,7 @@ await mesh.stop();
 
 ## API
 
-### `new MeshService<T extends MeshMessageMap>(key: string, options?: MeshServiceOptions)`
+### `new MeshService<T extends MeshMessageMap, B extends MeshBroadcastMap>(key: string, options?: MeshServiceOptions)`
 
 Creates a new mesh node.
 
@@ -101,14 +133,27 @@ Creates a new mesh node.
 
 Register a handler for a message type. Handlers can be registered before or after `start()`. Registering a handler for a type that already has one replaces it.
 
-#### `invoke<K>(instanceId: number, type: K, data: T[K]['request']): Promise<T[K]['response']>`
+#### `invoke<K>(instanceId: number, type: K, data: T[K]['request'], timeoutMs?: number): Promise<T[K]['response']>`
 
 Send a typed request to a specific node and wait for the response.
 
-- If `instanceId` matches the local node, the handler is called directly (no pub/sub).
+- **`timeoutMs`** -- Optional per-request timeout. Falls back to the service-level `requestTimeoutMs` if not provided. The handler-side heartbeat interval automatically adjusts to the caller's timeout.
+- If `instanceId` matches the local node, the handler is called directly (no pub/sub, no timeout).
 - If the target node doesn't exist or doesn't respond, the promise rejects with `MeshRequestTimeoutError`.
 - If the target has no handler for the type, rejects with `MeshNoHandlerError`.
 - If the handler throws, rejects with `MeshHandlerError` containing the error message.
+
+#### `registerBroadcastHandler<K>(type: K, handler: (data: B[K], senderInstanceId: number) => void | Promise<void>): void`
+
+Register a handler for a broadcast message type. Broadcast handlers receive the message data and the sender's instance ID. Errors thrown in handlers are logged but do not propagate.
+
+#### `broadcast<K>(type: K, data: B[K], options?: MeshBroadcastOptions): Promise<void>`
+
+Send a fire-and-forget message to all nodes in the mesh (including self, unless `skipSelf: true`).
+
+| Option     | Type      | Default | Description                         |
+| ---------- | --------- | ------- | ----------------------------------- |
+| `skipSelf` | `boolean` | `false` | Don't deliver the broadcast to self |
 
 #### `getNodes(): Promise<MeshNode[]>`
 
@@ -130,7 +175,7 @@ Register a callback invoked when the leader detects and removes an expired node.
 
 #### `start(): Promise<void>`
 
-Join the mesh. Acquires a unique instance ID, subscribes to its pub/sub channel, registers in the heartbeat set, and starts leader election. Throws if already running.
+Join the mesh. Acquires a unique instance ID, subscribes to its pub/sub channel and broadcast channel, registers in the heartbeat set, and starts leader election. Throws if already running.
 
 #### `stop(): Promise<void>`
 
@@ -169,6 +214,12 @@ Three message types flow over these channels:
 | **Request**   | Caller -> Handler | `{ requestId, senderInstanceId, type, data, timeoutMs }` |
 | **Response**  | Handler -> Caller | `{ requestId, reply: true, data?, error? }`              |
 | **Heartbeat** | Handler -> Caller | `{ requestId, heartbeat: true }`                         |
+
+### Broadcast
+
+All nodes also subscribe to a shared broadcast channel: `{prefix}:mesh:{key}:broadcast`. Broadcasts are fire-and-forget — the sender publishes once and all subscribers receive the message. No response is collected.
+
+Channel routing: the subscriber's `message` handler inspects the channel name to distinguish broadcast messages from point-to-point messages on the instance channel.
 
 ### Request Heartbeats
 

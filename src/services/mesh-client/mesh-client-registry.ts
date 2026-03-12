@@ -1,0 +1,32 @@
+import type { MeshClientRegistryBackend, RegisteredClient } from './types';
+
+export class MeshClientRegistry<TMeta> {
+    constructor(
+        private nodeId: number,
+        private backend: MeshClientRegistryBackend<TMeta>
+    ) {}
+
+    async register(clientId: string, metadata: TMeta): Promise<void> {
+        return this.backend.register(clientId, this.nodeId, metadata);
+    }
+
+    async unregister(clientId: string): Promise<boolean> {
+        return this.backend.unregister(clientId, this.nodeId);
+    }
+
+    async getClient(clientId: string): Promise<RegisteredClient<TMeta> | undefined> {
+        return this.backend.getClient(clientId);
+    }
+
+    async listClients(): Promise<RegisteredClient<TMeta>[]> {
+        return this.backend.listClients();
+    }
+
+    async listClientsForNode(nodeId?: number): Promise<RegisteredClient<TMeta>[]> {
+        return this.backend.listClientsForNode(nodeId ?? this.nodeId);
+    }
+
+    async cleanupNode(nodeId?: number): Promise<RegisteredClient<TMeta>[]> {
+        return this.backend.cleanupNode(nodeId ?? this.nodeId);
+    }
+}

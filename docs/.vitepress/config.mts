@@ -40,6 +40,7 @@ export default defineConfig({
                     { text: 'SRPC', link: '/srpc' },
                     { text: 'Leader Service', link: '/leader-service' },
                     { text: 'Mesh Service', link: '/mesh-service' },
+                    { text: 'Mesh Client Tracking', link: '/mesh-client' },
                     { text: 'Mail', link: '/mail' }
                 ]
             },

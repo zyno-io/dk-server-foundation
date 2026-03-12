@@ -20,13 +20,14 @@
 
 ## Services
 
-| Document                              | Description                                                                                                                                                                            |
-| ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [Workers](./worker.md)                | BullMQ background job processing with `@WorkerJob()` decorator, cron scheduling, and leader-elected job recording.                                                                     |
-| [SRPC](./srpc.md)                     | Bidirectional WebSocket RPC with HMAC auth, ts-proto code generation, multiplexed binary streams, and tracing.                                                                         |
-| [Leader Service](./leader-service.md) | Distributed leader election via Redis. One instance holds the lock at a time, with TTL-based expiry, automatic renewal, and callbacks for leadership transitions.                      |
-| [Mesh Service](./mesh-service.md)     | Typed RPC between distributed instances. Nodes register handlers and invoke them across the mesh by instance ID, with automatic heartbeats, timeout management, and dead-node cleanup. |
-| [Mail](./mail.md)                     | Email sending via Postmark or SMTP with a template system.                                                                                                                             |
+| Document                                 | Description                                                                                                                                                                                          |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [Workers](./worker.md)                   | BullMQ background job processing with `@WorkerJob()` decorator, cron scheduling, and leader-elected job recording.                                                                                   |
+| [SRPC](./srpc.md)                        | Bidirectional WebSocket RPC with HMAC auth, ts-proto code generation, multiplexed binary streams, and tracing.                                                                                       |
+| [Leader Service](./leader-service.md)    | Distributed leader election via Redis. One instance holds the lock at a time, with TTL-based expiry, automatic renewal, and callbacks for leadership transitions.                                    |
+| [Mesh Service](./mesh-service.md)        | Typed RPC and broadcast between distributed instances. Nodes register handlers and invoke them across the mesh by instance ID, with automatic heartbeats, timeout management, and dead-node cleanup. |
+| [Mesh Client Tracking](./mesh-client.md) | Track clients across pods and invoke on any client regardless of which pod it's connected to. Pluggable registry, transparent routing, and SRPC integration.                                         |
+| [Mail](./mail.md)                        | Email sending via Postmark or SMTP with a template system.                                                                                                                                           |
 
 ## Utilities
 

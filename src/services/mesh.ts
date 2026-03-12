@@ -8,6 +8,11 @@ import { createLogger } from './logger';
 // --- Types ---
 
 export type MeshMessageMap = Record<string, { request: unknown; response: unknown }>;
+export type MeshBroadcastMap = Record<string, unknown>;
+
+export interface MeshBroadcastOptions {
+    skipSelf?: boolean;
+}
 
 export interface MeshNode {
     instanceId: number;
@@ -124,6 +129,13 @@ interface MeshHeartbeat {
     heartbeat: true;
 }
 
+interface MeshBroadcast {
+    broadcast: true;
+    senderInstanceId: number;
+    type: string;
+    data: unknown;
+}
+
 // --- Pending Request ---
 
 interface PendingRequest {
@@ -132,11 +144,13 @@ interface PendingRequest {
     timer: ReturnType<typeof setTimeout>;
     type: string;
     targetInstanceId: number;
+    timeoutMs: number;
 }
 
 // --- MeshService ---
 
-export class MeshService<T extends MeshMessageMap> {
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export class MeshService<T extends MeshMessageMap, B extends MeshBroadcastMap = {}> {
     private _instanceId: number = 0;
     private key: string;
     private prefix: string = '';
@@ -153,6 +167,8 @@ export class MeshService<T extends MeshMessageMap> {
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     private handlers = new Map<string, (data: any) => any>();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    private broadcastHandlers = new Map<string, (data: any, senderInstanceId: number) => void | Promise<void>>();
     private pendingRequests = new Map<string, PendingRequest>();
     private activeHandlerIntervals = new Set<ReturnType<typeof setInterval>>();
     private nodeCleanedUpCallback: ((instanceId: number) => void | Promise<void>) | null = null;
@@ -173,6 +189,10 @@ export class MeshService<T extends MeshMessageMap> {
 
     registerHandler<K extends keyof T & string>(type: K, handler: (data: T[K]['request']) => T[K]['response'] | Promise<T[K]['response']>): void {
         this.handlers.set(type, handler);
+    }
+
+    registerBroadcastHandler<K extends keyof B & string>(type: K, handler: (data: B[K], senderInstanceId: number) => void | Promise<void>): void {
+        this.broadcastHandlers.set(type, handler);
     }
 
     setNodeCleanedUpCallback(cb: (instanceId: number) => void | Promise<void>): void {
@@ -196,10 +216,12 @@ export class MeshService<T extends MeshMessageMap> {
         }));
     }
 
-    async invoke<K extends keyof T & string>(instanceId: number, type: K, data: T[K]['request']): Promise<T[K]['response']> {
+    async invoke<K extends keyof T & string>(instanceId: number, type: K, data: T[K]['request'], timeoutMs?: number): Promise<T[K]['response']> {
         if (!this.running) {
             throw new Error('MeshService is not running');
         }
+
+        const effectiveTimeout = timeoutMs ?? this.requestTimeoutMs;
 
         // Local invocation — call handler directly
         if (instanceId === this._instanceId) {
@@ -218,7 +240,7 @@ export class MeshService<T extends MeshMessageMap> {
             senderInstanceId: this._instanceId,
             type,
             data,
-            timeoutMs: this.requestTimeoutMs
+            timeoutMs: effectiveTimeout
         };
         const payload = JSON.stringify(message);
 
@@ -226,14 +248,15 @@ export class MeshService<T extends MeshMessageMap> {
             const timer = setTimeout(() => {
                 this.pendingRequests.delete(requestId);
                 reject(new MeshRequestTimeoutError(instanceId, type));
-            }, this.requestTimeoutMs);
+            }, effectiveTimeout);
 
             this.pendingRequests.set(requestId, {
                 resolve: resolve as (value: unknown) => void,
                 reject,
                 timer,
                 type,
-                targetInstanceId: instanceId
+                targetInstanceId: instanceId,
+                timeoutMs: effectiveTimeout
             });
 
             const { client } = getMeshRedis();
@@ -243,6 +266,27 @@ export class MeshService<T extends MeshMessageMap> {
                 reject(new Error(`Failed to publish mesh request: ${err instanceof Error ? err.message : String(err)}`));
             });
         });
+    }
+
+    async broadcast<K extends keyof B & string>(type: K, data: B[K], options?: MeshBroadcastOptions): Promise<void> {
+        if (!this.running) {
+            throw new Error('MeshService is not running');
+        }
+
+        const message: MeshBroadcast = {
+            broadcast: true,
+            senderInstanceId: this._instanceId,
+            type,
+            data
+        };
+
+        // Deliver locally unless skipSelf
+        if (!options?.skipSelf) {
+            this.handleBroadcastMessage(message);
+        }
+
+        const { client } = getMeshRedis();
+        await client.publish(this.broadcastChannel(), JSON.stringify(message));
     }
 
     async start(): Promise<void> {
@@ -261,10 +305,15 @@ export class MeshService<T extends MeshMessageMap> {
         this.subscriberClient = subClient;
 
         try {
-            const channel = this.channelForInstance(this._instanceId);
-            await subClient.subscribe(channel);
-            subClient.on('message', (_channel: string, message: string) => {
-                this.handleMessage(message);
+            const instanceChannel = this.channelForInstance(this._instanceId);
+            const broadcastCh = this.broadcastChannel();
+            await subClient.subscribe(instanceChannel, broadcastCh);
+            subClient.on('message', (channel: string, message: string) => {
+                if (channel === broadcastCh) {
+                    this.handleBroadcastIncoming(message);
+                } else {
+                    this.handleMessage(message);
+                }
             });
 
             // Register heartbeat and node metadata
@@ -365,6 +414,10 @@ export class MeshService<T extends MeshMessageMap> {
         return `${this.prefix}:mesh:${this.key}:node:${instanceId}`;
     }
 
+    private broadcastChannel(): string {
+        return `${this.prefix}:mesh:${this.key}:broadcast`;
+    }
+
     private async doHeartbeat(): Promise<void> {
         if (!this.running) return;
 
@@ -403,6 +456,36 @@ export class MeshService<T extends MeshMessageMap> {
         }
     }
 
+    private handleBroadcastIncoming(raw: string): void {
+        if (!this.running) return;
+
+        let msg: unknown;
+        try {
+            msg = JSON.parse(raw);
+        } catch {
+            return;
+        }
+
+        if (typeof msg !== 'object' || msg === null) return;
+
+        const obj = msg as MeshBroadcast;
+        // Skip self-sent broadcasts (we already delivered locally in broadcast())
+        if (obj.senderInstanceId === this._instanceId) return;
+
+        this.handleBroadcastMessage(obj);
+    }
+
+    private handleBroadcastMessage(msg: MeshBroadcast): void {
+        const handler = this.broadcastHandlers.get(msg.type);
+        if (!handler) return;
+
+        Promise.resolve()
+            .then(() => handler(msg.data, msg.senderInstanceId))
+            .catch(err => {
+                this.logger.warn('broadcast handler error', { err, type: msg.type });
+            });
+    }
+
     private handleMessage(raw: string): void {
         if (!this.running) return;
 
@@ -434,12 +517,12 @@ export class MeshService<T extends MeshMessageMap> {
         const pending = this.pendingRequests.get(msg.requestId);
         if (!pending) return;
 
-        // Reset timeout
+        // Reset timeout using the original per-request timeout
         clearTimeout(pending.timer);
         pending.timer = setTimeout(() => {
             this.pendingRequests.delete(msg.requestId);
             pending.reject(new MeshRequestTimeoutError(pending.targetInstanceId, pending.type));
-        }, this.requestTimeoutMs);
+        }, pending.timeoutMs);
     }
 
     private handleResponseMessage(msg: MeshResponse): void {
