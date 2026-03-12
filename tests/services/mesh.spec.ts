@@ -1,5 +1,5 @@
-import { describe, it, before, after, beforeEach, afterEach, mock } from 'node:test';
 import assert from 'node:assert/strict';
+import { describe, it, before, after, beforeEach, afterEach, mock } from 'node:test';
 import { hostname } from 'os';
 
 import {
@@ -7,6 +7,7 @@ import {
     MeshRequestTimeoutError,
     MeshHandlerError,
     MeshNoHandlerError,
+    destroyMeshRedis,
     sleepMs,
     TestingHelpers,
     createRedis,
@@ -68,6 +69,9 @@ describe('MeshService', () => {
         assert.ok(svc.instanceId > 0);
 
         await svc.stop();
+
+        // instanceId should be reset after stop
+        assert.strictEqual(svc.instanceId, 0);
     });
 
     it('sends request and returns response between two nodes', async () => {
@@ -750,13 +754,40 @@ describe('MeshService', () => {
 
         // stop() before start() should not throw
         await svc.stop();
+        assert.strictEqual(svc.instanceId, 0);
 
         // Normal start/stop cycle
         await svc.start();
+        const id = svc.instanceId;
+        assert.ok(id > 0);
         await svc.stop();
+        assert.strictEqual(svc.instanceId, 0);
 
-        // Double stop should not throw
+        // Double stop should not throw and should not re-deregister
         await svc.stop();
+        assert.strictEqual(svc.instanceId, 0);
+    });
+
+    it('destroyMeshRedis tears down shared client and allows re-creation', async () => {
+        const svc1 = createService('MeshTestDestroy');
+        svc1.registerHandler('echo', data => ({ text: data.text }));
+        await svc1.start();
+        assert.ok(svc1.instanceId > 0);
+        await svc1.stop();
+
+        // Destroy the shared Redis client
+        destroyMeshRedis();
+
+        // New service should work with a fresh client
+        const svc2 = createService('MeshTestDestroy');
+        svc2.registerHandler('echo', data => ({ text: `fresh: ${data.text}` }));
+        await svc2.start();
+        assert.ok(svc2.instanceId > 0);
+
+        const result = await svc2.invoke(svc2.instanceId, 'echo', { text: 'after destroy' });
+        assert.deepStrictEqual(result, { text: 'fresh: after destroy' });
+
+        await svc2.stop();
     });
 
     it('getNodes returns all live nodes with hostname and self flag', async () => {

@@ -1,7 +1,5 @@
-import { hostname } from 'os';
-
 import { uuid } from '@deepkit/type';
-import { memoize } from 'lodash';
+import { hostname } from 'os';
 
 import { createRedis } from '../helpers/redis/redis';
 import { LeaderService, LeaderServiceOptions } from './leader';
@@ -70,19 +68,39 @@ end
 return expired
 `;
 
+const DEREGISTER_SCRIPT = `
+redis.call("zrem", KEYS[1], ARGV[1])
+redis.call("hdel", KEYS[2], ARGV[1])
+return 1
+`;
+
 // --- Redis Client ---
 
 type MeshRedisClient = ReturnType<typeof createRedis>['client'] & {
     HEARTBEAT: (key: string, instanceId: string) => Promise<number>;
     CLEANUP: (heartbeatsKey: string, nodesKey: string, ttlMs: string) => Promise<string[]>;
+    DEREGISTER: (heartbeatsKey: string, nodesKey: string, instanceId: string) => Promise<number>;
 };
 
-const getMeshRedis = memoize(() => {
-    const { client, prefix } = createRedis('MESH');
-    client.defineCommand('HEARTBEAT', { lua: HEARTBEAT_SCRIPT, numberOfKeys: 1 });
-    client.defineCommand('CLEANUP', { lua: CLEANUP_SCRIPT, numberOfKeys: 2 });
-    return { client: client as MeshRedisClient, prefix };
-});
+let meshRedis: { client: MeshRedisClient; prefix: string } | null = null;
+
+function getMeshRedis(): { client: MeshRedisClient; prefix: string } {
+    if (!meshRedis) {
+        const { client, prefix } = createRedis('MESH');
+        client.defineCommand('HEARTBEAT', { lua: HEARTBEAT_SCRIPT, numberOfKeys: 1 });
+        client.defineCommand('CLEANUP', { lua: CLEANUP_SCRIPT, numberOfKeys: 2 });
+        client.defineCommand('DEREGISTER', { lua: DEREGISTER_SCRIPT, numberOfKeys: 2 });
+        meshRedis = { client: client as MeshRedisClient, prefix };
+    }
+    return meshRedis;
+}
+
+export function destroyMeshRedis(): void {
+    if (meshRedis) {
+        meshRedis.client.disconnect();
+        meshRedis = null;
+    }
+}
 
 // --- Channel Message Types ---
 
@@ -315,16 +333,18 @@ export class MeshService<T extends MeshMessageMap> {
             this.subscriberClient = null;
         }
 
-        // Remove self from heartbeats and nodes
-        try {
-            const { client } = getMeshRedis();
-            await client.zrem(this.heartbeatsKey(), String(this._instanceId));
-            await client.hdel(this.nodesKey(), String(this._instanceId));
-        } catch {
-            // ignore errors during cleanup
+        // Atomically remove self from heartbeats and nodes
+        if (this._instanceId !== 0) {
+            const stoppedInstanceId = this._instanceId;
+            this._instanceId = 0;
+            try {
+                const { client } = getMeshRedis();
+                await client.DEREGISTER(this.heartbeatsKey(), this.nodesKey(), String(stoppedInstanceId));
+            } catch {
+                // ignore errors during cleanup
+            }
+            this.logger.info('mesh node stopped', { instanceId: stoppedInstanceId, key: this.key });
         }
-
-        this.logger.info('mesh node stopped', { instanceId: this._instanceId, key: this.key });
     }
 
     // --- Private ---
