@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { fromJson, toJson } from '../../src/helpers/data/serialization';
+import { fromJson, safeJsonStringify, toJson } from '../../src/helpers/data/serialization';
 
 describe('Serialization helpers', () => {
     describe('toJson', () => {
@@ -109,6 +109,70 @@ describe('Serialization helpers', () => {
             assert.throws(() => fromJson('invalid'));
             assert.throws(() => fromJson('{'));
             assert.throws(() => fromJson('{a:1}'));
+        });
+    });
+
+    describe('safeJsonStringify', () => {
+        it('serializes plain objects like JSON.stringify', () => {
+            const obj = { a: 1, b: 'hello', c: [1, 2, 3] };
+            assert.strictEqual(safeJsonStringify(obj), JSON.stringify(obj));
+        });
+
+        it('serializes primitives', () => {
+            assert.strictEqual(safeJsonStringify(42), '42');
+            assert.strictEqual(safeJsonStringify('hello'), '"hello"');
+            assert.strictEqual(safeJsonStringify(null), 'null');
+            assert.strictEqual(safeJsonStringify(true), 'true');
+        });
+
+        it('replaces true circular references with [Circular]', () => {
+            const obj: any = { a: 1 };
+            obj.self = obj;
+            const result = JSON.parse(safeJsonStringify(obj));
+            assert.strictEqual(result.a, 1);
+            assert.strictEqual(result.self, '[Circular]');
+        });
+
+        it('handles deeply nested circular references', () => {
+            const obj: any = { child: { grandchild: {} } };
+            obj.child.grandchild.root = obj;
+            const result = JSON.parse(safeJsonStringify(obj));
+            assert.strictEqual(result.child.grandchild.root, '[Circular]');
+        });
+
+        it('preserves shared (non-circular) object references', () => {
+            const shared = { x: 1, y: 2 };
+            const obj = { a: shared, b: shared };
+            const result = JSON.parse(safeJsonStringify(obj));
+            assert.deepStrictEqual(result.a, { x: 1, y: 2 });
+            assert.deepStrictEqual(result.b, { x: 1, y: 2 });
+        });
+
+        it('preserves shared arrays', () => {
+            const shared = [1, 2, 3];
+            const obj = { first: shared, second: shared };
+            const result = JSON.parse(safeJsonStringify(obj));
+            assert.deepStrictEqual(result.first, [1, 2, 3]);
+            assert.deepStrictEqual(result.second, [1, 2, 3]);
+        });
+
+        it('handles circular reference within an array', () => {
+            const arr: any[] = [1, 2];
+            arr.push(arr);
+            const result = JSON.parse(safeJsonStringify(arr));
+            assert.strictEqual(result[0], 1);
+            assert.strictEqual(result[1], 2);
+            assert.strictEqual(result[2], '[Circular]');
+        });
+
+        it('handles mixed shared and circular references', () => {
+            const shared = { val: 'shared' };
+            const obj: any = { a: shared, b: { nested: shared } };
+            obj.b.circular = obj;
+            const result = JSON.parse(safeJsonStringify(obj));
+            assert.deepStrictEqual(result.a, { val: 'shared' });
+            assert.deepStrictEqual(result.b.nested, { val: 'shared' });
+            assert.strictEqual(result.b.circular, '[Circular]');
         });
     });
 

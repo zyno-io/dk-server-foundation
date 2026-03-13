@@ -5,7 +5,7 @@ export interface RegisteredClient<TMeta> {
 }
 
 export interface MeshClientRegistryBackend<TMeta> {
-    register(clientId: string, nodeId: number, metadata: TMeta): Promise<void>;
+    register(clientId: string, nodeId: number, metadata: TMeta): Promise<number | null>;
     unregister(clientId: string, nodeId: number): Promise<boolean>;
     updateMetadata(clientId: string, nodeId: number, metadata: TMeta): Promise<boolean>;
     getClient(clientId: string): Promise<RegisteredClient<TMeta> | undefined>;

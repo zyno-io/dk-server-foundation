@@ -9,6 +9,7 @@ import { getAppConfig } from '../app/resolver';
 import { DBProvider, globalState } from '../app/state';
 import { getDialect, quoteId } from '../database/dialect';
 import { HealthcheckService } from '../health/healthcheck.service';
+import { safeJsonStringify } from '../helpers/data/serialization';
 import { getPackageName, getPackageVersion } from '../helpers/io/package';
 import { buildReplContext } from '../services/cli/repl-context';
 import { JobEntity } from '../services/worker/entity';
@@ -465,7 +466,7 @@ export class DevConsoleSrpcServer {
     }
 
     broadcast(type: string, data: unknown) {
-        const jsonData = JSON.stringify(data);
+        const jsonData = safeJsonStringify(data);
         for (const stream of this.server.streamsById.values()) {
             this.server.invoke(stream, 'dEvent', { type, jsonData }).catch(() => {
                 // fire-and-forget: ignore errors from individual clients

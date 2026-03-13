@@ -9,8 +9,12 @@ import { ClientDisconnectedError, ClientInvocationError, ClientNotFoundError, ty
 type ForwardRequest = { clientId: string; type: string; data: unknown; timeoutMs?: number };
 type ForwardResponse = { data?: unknown; error?: string; errorName?: string };
 
+type KickClientRequest = { clientId: string };
+type KickClientResponse = { kicked: boolean };
+
 type ForwardMessages = {
     forward: { request: ForwardRequest; response: ForwardResponse };
+    kickClient: { request: KickClientRequest; response: KickClientResponse };
 };
 
 // --- Options ---
@@ -34,6 +38,7 @@ export class MeshClientService<TMeta, TBroadcasts extends MeshBroadcastMap = {}>
     private backend: MeshClientRegistryBackend<TMeta>;
     private clientInvokeFn: MeshClientServiceOptions<TMeta>['clientInvokeFn'];
     private nodeCleanedUpCallbacks: ((nodeId: number, orphaned: RegisteredClient<TMeta>[]) => void | Promise<void>)[] = [];
+    private clientSupersededCallbacks: ((clientId: string) => void | Promise<void>)[] = [];
 
     constructor(options: MeshClientServiceOptions<TMeta>) {
         this.backend = options.registryBackend ?? new MeshClientRedisRegistry<TMeta>(`_mc:${options.key}`);
@@ -50,6 +55,19 @@ export class MeshClientService<TMeta, TBroadcasts extends MeshBroadcastMap = {}>
                     errorName: err instanceof Error ? err.name : undefined
                 };
             }
+        });
+
+        this.mesh.registerHandler('kickClient', async (req: KickClientRequest): Promise<KickClientResponse> => {
+            let kicked = false;
+            for (const cb of this.clientSupersededCallbacks) {
+                try {
+                    await cb(req.clientId);
+                    kicked = true;
+                } catch (err) {
+                    this.logger.warn('client superseded callback error', { err, clientId: req.clientId });
+                }
+            }
+            return { kicked };
         });
 
         this.mesh.setNodeCleanedUpCallback(async (nodeId: number) => {
@@ -71,6 +89,10 @@ export class MeshClientService<TMeta, TBroadcasts extends MeshBroadcastMap = {}>
 
     onNodeClientsOrphaned(cb: (nodeId: number, orphaned: RegisteredClient<TMeta>[]) => void | Promise<void>): void {
         this.nodeCleanedUpCallbacks.push(cb);
+    }
+
+    onClientSuperseded(cb: (clientId: string) => void | Promise<void>): void {
+        this.clientSupersededCallbacks.push(cb);
     }
 
     get instanceId(): number {
@@ -103,7 +125,12 @@ export class MeshClientService<TMeta, TBroadcasts extends MeshBroadcastMap = {}>
 
     async registerClient(clientId: string, metadata: TMeta): Promise<void> {
         if (!this.running) return;
-        await this.registry.register(clientId, metadata);
+        const supersededNodeId = await this.registry.register(clientId, metadata);
+        if (supersededNodeId !== null) {
+            this.mesh.invoke(supersededNodeId, 'kickClient', { clientId }).catch(err => {
+                this.logger.warn('failed to kick superseded client', { err, clientId, supersededNodeId });
+            });
+        }
     }
 
     async unregisterClient(clientId: string): Promise<boolean> {

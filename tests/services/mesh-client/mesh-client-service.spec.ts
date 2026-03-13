@@ -455,6 +455,80 @@ describe('MeshClientService', () => {
         services = services.filter(s => s !== svc2);
     });
 
+    it('onClientSuperseded fires when client re-registers on different node', async () => {
+        const key = `test-mcs-${++keyCounter}`;
+
+        const localClients1 = new Map<string, (type: string, data: unknown) => Promise<unknown>>();
+        const svc1 = createClientService(key, localClients1);
+
+        const localClients2 = new Map<string, (type: string, data: unknown) => Promise<unknown>>();
+        const svc2 = createClientService(key, localClients2);
+
+        const superseded: string[] = [];
+        svc1.onClientSuperseded(clientId => {
+            superseded.push(clientId);
+        });
+
+        await svc1.start();
+        await svc2.start();
+        await sleepMs(100);
+
+        // Register client on svc1
+        localClients1.set('client-1', async () => ({}));
+        await svc1.registerClient('client-1', { userId: 'u1' });
+
+        // Re-register same client on svc2 — should trigger supersession on svc1
+        await svc2.registerClient('client-1', { userId: 'u1' });
+        await sleepMs(500);
+
+        assert.ok(superseded.length >= 1, 'superseded callback should have fired');
+        assert.strictEqual(superseded[0], 'client-1');
+    });
+
+    it('onClientSuperseded callback error is caught without crashing', async () => {
+        const key = `test-mcs-${++keyCounter}`;
+
+        const svc1 = createClientService(key, new Map());
+        const svc2 = createClientService(key, new Map());
+
+        let secondCallbackFired = false;
+        svc1.onClientSuperseded(() => {
+            throw new Error('superseded callback boom');
+        });
+        svc1.onClientSuperseded(() => {
+            secondCallbackFired = true;
+        });
+
+        await svc1.start();
+        await svc2.start();
+        await sleepMs(100);
+
+        await svc1.registerClient('client-1', { userId: 'u1' });
+        await svc2.registerClient('client-1', { userId: 'u1' });
+        await sleepMs(500);
+
+        // Second callback should still have fired despite first throwing
+        assert.strictEqual(secondCallbackFired, true);
+    });
+
+    it('registerClient does not fire superseded for same-node re-register', async () => {
+        const key = `test-mcs-${++keyCounter}`;
+        const svc = createClientService(key, new Map());
+
+        const superseded: string[] = [];
+        svc.onClientSuperseded(clientId => {
+            superseded.push(clientId);
+        });
+
+        await svc.start();
+
+        await svc.registerClient('client-1', { userId: 'u1' });
+        await svc.registerClient('client-1', { userId: 'u1-updated' });
+        await sleepMs(200);
+
+        assert.strictEqual(superseded.length, 0, 'should not fire superseded for same-node re-register');
+    });
+
     it('handles concurrent cross-node invocations to the same client', async () => {
         const key = `test-mcs-${++keyCounter}`;
 

@@ -44,8 +44,12 @@ The `MeshClientRegistryBackend` interface is pluggable — implement your own fo
 
 ```typescript
 class DatabaseClientRegistry<TMeta> implements MeshClientRegistryBackend<TMeta> {
-    async register(clientId: string, nodeId: number, metadata: TMeta): Promise<void> {
+    async register(clientId: string, nodeId: number, metadata: TMeta): Promise<number | null> {
+        // Returns the old nodeId if the client was superseded from a different node, or null.
+        const existing = await db.query(`SELECT node_id FROM connected_clients WHERE client_id = ?`, [clientId]);
+        const supersededNodeId = existing?.nodeId != null && existing.nodeId !== nodeId ? existing.nodeId : null;
         await db.query(`INSERT INTO connected_clients ... ON DUPLICATE KEY UPDATE ...`);
+        return supersededNodeId;
     }
     async unregister(clientId: string, nodeId: number): Promise<boolean> {
         const result = await db.query(`DELETE FROM connected_clients WHERE client_id = ? AND node_id = ?`, [clientId, nodeId]);
@@ -80,9 +84,9 @@ class DatabaseClientRegistry<TMeta> implements MeshClientRegistryBackend<TMeta> 
 
 Creates a registry bound to a specific mesh node ID.
 
-#### `register(clientId, metadata)` → `Promise<void>`
+#### `register(clientId, metadata)` → `Promise<number | null>`
 
-Register a client on this node. If the client was previously registered on a different node, the old registration is atomically replaced.
+Register a client on this node. If the client was previously registered on a different node, the old registration is atomically replaced and the previous node ID is returned. Returns `null` if the client is new or was already on this node.
 
 #### `unregister(clientId)` → `Promise<boolean>`
 

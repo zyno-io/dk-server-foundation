@@ -28,10 +28,13 @@ class DelayedRegisterBackend<TMeta> implements MeshClientRegistryBackend<TMeta> 
     private registerStarted = createDeferred<void>();
     private releaseRegister = createDeferred<void>();
 
-    async register(clientId: string, nodeId: number, metadata: TMeta): Promise<void> {
+    async register(clientId: string, nodeId: number, metadata: TMeta): Promise<number | null> {
         this.registerStarted.resolve();
         await this.releaseRegister.promise;
+        const existing = this.clients.get(clientId);
+        const supersededNodeId = existing && existing.nodeId !== nodeId ? existing.nodeId : null;
         this.clients.set(clientId, { clientId, nodeId, metadata });
+        return supersededNodeId;
     }
 
     async unregister(clientId: string, nodeId: number): Promise<boolean> {
@@ -686,6 +689,176 @@ describe('MeshSrpcServer', () => {
         assert.strictEqual(received.length, 1);
         assert.strictEqual(received[0].value, 42);
         assert.strictEqual(received[0].sender, server1.meshInstanceId);
+    });
+
+    it('meta proxy auto-syncs stream.meta mutations to registry', async () => {
+        const key = `srpc-${++keyCounter}`;
+        const server = createServer(key);
+        await server.meshStart();
+
+        // Register a connection handler that mutates stream.meta
+        server.registerConnectionHandler(stream => {
+            stream.meta.userId = 'mutated-in-handler';
+        });
+
+        const client = createClient(`/mesh-srpc-test-${key}`, 'client-proxy');
+        await waitForConnection(client);
+        // Wait for microtask sync to flush
+        await sleepMs(200);
+
+        const regClient = await server.clientRegistry.getClient('client-proxy');
+        assert.ok(regClient);
+        assert.strictEqual(regClient.metadata.userId, 'mutated-in-handler');
+    });
+
+    it('meta proxy batches multiple synchronous mutations into one sync', async () => {
+        const key = `srpc-${++keyCounter}`;
+
+        // Track updateMetadata calls via a wrapping backend
+        let updateCount = 0;
+        const server = new MeshSrpcServer<TestMeta, ClientMessage, ServerMessage, TestMeta>({
+            logger: createLogger('MeshSrpcTest'),
+            clientMessage: ClientMessage,
+            serverMessage: ServerMessage,
+            wsPath: `/mesh-srpc-test-${key}`,
+            logLevel: false,
+            meshKey: key,
+            meshOptions: FAST_MESH,
+            extractMetadata: stream => ({ userId: stream.meta.userId })
+        });
+        servers.push(server);
+
+        await server.meshStart();
+
+        // Patch updateClientMetadata to count calls
+        
+        const meshSvc = (server as any).meshClientService;
+        const origSvcUpdate = meshSvc.updateClientMetadata.bind(meshSvc);
+        meshSvc.updateClientMetadata = async (...args: any[]) => {
+            updateCount++;
+            return origSvcUpdate(...args);
+        };
+
+        // Mutate meta multiple times synchronously in a connection handler
+        server.registerConnectionHandler(stream => {
+            stream.meta.userId = 'first';
+            stream.meta.userId = 'second';
+            stream.meta.userId = 'third';
+        });
+
+        const client = createClient(`/mesh-srpc-test-${key}`, 'client-batch');
+        await waitForConnection(client);
+        await sleepMs(200);
+
+        // Should have been batched: 1 update (not 3)
+        // Note: there may also be the initial registration, so we check updateCount specifically
+        assert.ok(updateCount <= 1, `expected at most 1 updateMetadata call, got ${updateCount}`);
+
+        // Final value should be 'third'
+        const regClient = await server.clientRegistry.getClient('client-batch');
+        assert.ok(regClient);
+        assert.strictEqual(regClient.metadata.userId, 'third');
+    });
+
+    it('meta proxy works without extractMetadata (default path)', async () => {
+        const key = `srpc-${++keyCounter}`;
+
+        // No extractMetadata — uses stream.meta directly
+        const server = new MeshSrpcServer<TestMeta, ClientMessage, ServerMessage, TestMeta>({
+            logger: createLogger('MeshSrpcTest'),
+            clientMessage: ClientMessage,
+            serverMessage: ServerMessage,
+            wsPath: `/mesh-srpc-test-${key}`,
+            logLevel: false,
+            meshKey: key,
+            meshOptions: FAST_MESH
+        });
+        servers.push(server);
+        await server.meshStart();
+
+        server.registerConnectionHandler(stream => {
+            stream.meta.userId = 'updated-default-path';
+        });
+
+        const client = createClient(`/mesh-srpc-test-${key}`, 'client-defmeta');
+        await waitForConnection(client);
+        await sleepMs(200);
+
+        const regClient = await server.clientRegistry.getClient('client-defmeta');
+        assert.ok(regClient);
+        assert.strictEqual((regClient.metadata as TestMeta).userId, 'updated-default-path');
+    });
+
+    it('meta proxy does not double-proxy on meshStart backfill', async () => {
+        const key = `srpc-${++keyCounter}`;
+        const server = createServer(key);
+
+        // Connect client BEFORE meshStart
+        const client = createClient(`/mesh-srpc-test-${key}`, 'client-nodouble');
+        await waitForConnection(client);
+        await sleepMs(200);
+
+        // Now start mesh — this backfills and calls installMetaProxy again
+        await server.meshStart();
+
+        // Mutate meta after meshStart — should trigger exactly one sync
+        let updateCount = 0;
+        const meshSvc = (server as any).meshClientService;
+        const origUpdate = meshSvc.updateClientMetadata.bind(meshSvc);
+        meshSvc.updateClientMetadata = async (...args: any[]) => {
+            updateCount++;
+            return origUpdate(...args);
+        };
+
+        // Access the stream to mutate its meta
+        const stream = server.streamsByClientId.get('client-nodouble');
+        assert.ok(stream);
+        stream.meta.userId = 'post-backfill-update';
+        await sleepMs(200);
+
+        // Should be exactly 1 update, not 2 (which would happen with double proxy)
+        assert.strictEqual(updateCount, 1, `expected 1 updateMetadata call, got ${updateCount}`);
+
+        const regClient = await server.clientRegistry.getClient('client-nodouble');
+        assert.ok(regClient);
+        assert.strictEqual(regClient.metadata.userId, 'post-backfill-update');
+    });
+
+    it('cross-node client supersession disconnects local stream', async () => {
+        const key = `srpc-${++keyCounter}`;
+        const server1 = createServer(key);
+        const server2 = createServer(key);
+        await server1.meshStart();
+        await server2.meshStart();
+        await sleepMs(100);
+
+        // Track client disconnections from SRPC level
+        let srpcDisconnected = false;
+        const client1 = createClient(`/mesh-srpc-test-${key}`, 'client-supersede');
+        client1.registerDisconnectHandler(() => {
+            srpcDisconnected = true;
+        });
+        await waitForConnection(client1);
+        await sleepMs(200);
+
+        // Verify client is on server1
+        let regClient = await server1.clientRegistry.getClient('client-supersede');
+        assert.ok(regClient);
+        assert.strictEqual(regClient.nodeId, server1.meshInstanceId);
+
+        // Simulate the same client connecting to server2 by registering directly.
+        // This triggers the cross-node supersession kick via the mesh.
+        const meshSvc2 = (server2 as any).meshClientService;
+        await meshSvc2.registerClient('client-supersede', { userId: 'user-supersede' });
+        await sleepMs(500);
+
+        // Client should now be on server2
+        regClient = await server2.clientRegistry.getClient('client-supersede');
+        assert.ok(regClient);
+        assert.strictEqual(regClient.nodeId, server2.meshInstanceId);
+
+        // The original client's WebSocket should have been kicked
+        assert.strictEqual(srpcDisconnected, true, 'original client should have been disconnected');
     });
 
     it('meshStop cleans up registered clients', async () => {

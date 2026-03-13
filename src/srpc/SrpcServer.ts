@@ -343,7 +343,7 @@ export class SrpcServer<
 
         this.streamsById.set(stream.id, stream);
         this.streamsByClientId.set(stream.clientId, stream);
-        this.streamConnectionHandlers.forEach(handler => handler(stream));
+        this.onStreamConnected(stream);
 
         this.writeToStream(stream, { pingPong: {} } as TServerOutput);
     }
@@ -371,12 +371,12 @@ export class SrpcServer<
         }
     }
 
-    private cleanupStream(stream: SrpcStream<TMeta>, forceCause?: SrpcDisconnectCause) {
+    protected cleanupStream(stream: SrpcStream<TMeta>, forceCause?: SrpcDisconnectCause) {
         if (stream.lastPingAt < 0) return; // already cleaned up
         stream.lastPingAt = -1;
 
         if (forceCause) this.closeStreamWithError(stream, forceCause, `Stream terminated with cause: ${forceCause}`);
-        this.streamDisconnectionHandlers.forEach(handler => handler(stream, forceCause ?? 'disconnect'));
+        this.onStreamDisconnected(stream, forceCause ?? 'disconnect');
 
         stream.$queue.forEach(item => item.reject(new Error('Stream disconnected')));
         stream.$queue.clear();
@@ -494,7 +494,7 @@ export class SrpcServer<
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    private async runMessageHandler(handler: TSrpcMessageHandlerFnOrClass<SrpcStream<TMeta>, any, any>, stream: SrpcStream<TMeta>, data: any) {
+    protected async runMessageHandler(handler: TSrpcMessageHandlerFnOrClass<SrpcStream<TMeta>, any, any>, stream: SrpcStream<TMeta>, data: any) {
         if (isSrpcMessageHandlerClass(handler)) {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const handlerInstance = new (handler as any)() as ISrpcMessageHandler<SrpcStream<TMeta>, any, any>;
@@ -502,6 +502,14 @@ export class SrpcServer<
         }
 
         return handler(stream, data);
+    }
+
+    protected onStreamConnected(stream: SrpcStream<TMeta>): void {
+        this.streamConnectionHandlers.forEach(handler => handler(stream));
+    }
+
+    protected onStreamDisconnected(stream: SrpcStream<TMeta>, cause: SrpcDisconnectCause): void {
+        this.streamDisconnectionHandlers.forEach(handler => handler(stream, cause));
     }
 
     ////////////////////////////////////////

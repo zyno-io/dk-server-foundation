@@ -6,7 +6,7 @@ export class MeshClientRegistry<TMeta> {
         private backend: MeshClientRegistryBackend<TMeta>
     ) {}
 
-    async register(clientId: string, metadata: TMeta): Promise<void> {
+    async register(clientId: string, metadata: TMeta): Promise<number | null> {
         return this.backend.register(clientId, this.nodeId, metadata);
     }
 

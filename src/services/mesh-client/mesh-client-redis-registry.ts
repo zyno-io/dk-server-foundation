@@ -22,6 +22,7 @@ local setKeyPrefix = ARGV[4]
 local ttl = ${KEY_TTL_SECONDS}
 
 -- Check if client already exists on a different node
+local supersededNodeId = -1
 local existing = redis.call("hget", clientsKey, clientId)
 if existing then
     local parsed = cjson.decode(existing)
@@ -30,6 +31,7 @@ if existing then
         -- Construct old node's set key and remove
         local oldSetKey = setKeyPrefix .. oldNodeId .. ":clients"
         redis.call("srem", oldSetKey, clientId)
+        supersededNodeId = tonumber(oldNodeId)
     end
 end
 
@@ -41,7 +43,9 @@ redis.call("sadd", newSetKey, clientId)
 -- Refresh safety-net TTL on every write
 redis.call("expire", clientsKey, ttl)
 redis.call("expire", newSetKey, ttl)
-return 1
+
+-- Return old nodeId if client was superseded from a different node, else -1
+return supersededNodeId
 `;
 
 const UNREGISTER_SCRIPT = `
@@ -176,9 +180,9 @@ export class MeshClientRedisRegistry<TMeta> implements MeshClientRegistryBackend
         return `${prefix}:mesh:${this.key}:node:`;
     }
 
-    async register(clientId: string, nodeId: number, metadata: TMeta): Promise<void> {
+    async register(clientId: string, nodeId: number, metadata: TMeta): Promise<number | null> {
         const { client } = getClientRedis();
-        await client.MC_REGISTER(
+        const result = await client.MC_REGISTER(
             this.clientsKey(),
             this.nodeSetKey(nodeId),
             clientId,
@@ -186,6 +190,7 @@ export class MeshClientRedisRegistry<TMeta> implements MeshClientRegistryBackend
             JSON.stringify(metadata),
             this.nodeSetKeyPrefix()
         );
+        return result >= 0 ? result : null;
     }
 
     async unregister(clientId: string, nodeId: number): Promise<boolean> {

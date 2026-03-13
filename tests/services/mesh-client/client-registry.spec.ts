@@ -228,6 +228,23 @@ describe('MeshClientRegistry', () => {
         assert.strictEqual(updated, false);
     });
 
+    it('register returns null for new client', async () => {
+        const result = await registry1.register('client-new', { userId: 'u1', role: 'user' });
+        assert.strictEqual(result, null);
+    });
+
+    it('register returns null when re-registering on same node', async () => {
+        await registry1.register('client-1', { userId: 'u1', role: 'user' });
+        const result = await registry1.register('client-1', { userId: 'u1', role: 'admin' });
+        assert.strictEqual(result, null);
+    });
+
+    it('register returns superseded nodeId when client moves between nodes', async () => {
+        await registry1.register('client-1', { userId: 'u1', role: 'user' });
+        const result = await registry2.register('client-1', { userId: 'u1', role: 'user' });
+        assert.strictEqual(result, 1);
+    });
+
     it('register updates metadata for existing client on same node', async () => {
         await registry1.register('client-1', { userId: 'u1', role: 'user' });
         await registry1.register('client-1', { userId: 'u1', role: 'admin' });
