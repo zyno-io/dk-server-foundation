@@ -1,6 +1,6 @@
 export { SrpcByteStream } from './SrpcByteStream';
 export type { SrpcClientOptions } from './SrpcClient';
-export { SrpcClient } from './SrpcClient';
+export { SrpcClient, SrpcConflictError } from './SrpcClient';
 export { SrpcServer } from './SrpcServer';
 export type {
     HandlerRequestData,

@@ -82,7 +82,7 @@ export interface SrpcMessageFns<T> {
     decode(input: BinaryReader | Uint8Array, length?: number): T;
 }
 
-export type SrpcDisconnectCause = 'disconnect' | 'duplicate' | 'timeout' | 'badArg';
+export type SrpcDisconnectCause = 'disconnect' | 'duplicate' | 'conflict' | 'timeout' | 'badArg';
 
 export interface IQueuedRequest {
     exp: number;
@@ -125,6 +125,7 @@ export interface SrpcStream<T = SrpcMeta> extends IByteStreamable {
     readonly clientId: string;
     readonly appVersion: string;
     readonly configureTs: number;
+    readonly protocolVersion: number;
     readonly meta: T;
     readonly connectedAt: number;
     lastPingAt: number;

@@ -168,7 +168,16 @@ const client = new SrpcClient(
     { enableReconnect: true } // Options
 );
 
-client.connect(); // Non-async: initiates connection in background
+// connect() returns a promise that resolves on successful handshake
+await client.connect();
+
+// Or fire-and-forget (registers handlers first, connects in background)
+client.registerConnectionHandler(() => { /* connected */ });
+client.registerDisconnectHandler(cause => {
+    // cause: 'disconnect' | 'duplicate' | 'conflict' | 'timeout' | 'badArg'
+    console.log('Disconnected:', cause);
+});
+client.connect(); // unhandled promise is fine here
 
 // Handle downstream messages (server -> client)
 client.registerMessageHandler('dNotify', async data => {
@@ -180,28 +189,54 @@ client.registerMessageHandler('dNotify', async data => {
 const result = await client.invoke('uEcho', { message: 'hello' });
 console.log(result.message); // 'hello'
 
-// Connection lifecycle
-client.registerConnectionHandler(async () => {
-    /* connected */
-});
-client.registerDisconnectHandler(async cause => {
-    /* disconnected */
-});
-
 // Check connection status
 if (client.isConnected) {
     /* ... */
 }
 
-// Disconnect (non-async: closes connection immediately)
+// Disconnect
 client.disconnect();
 ```
 
 ### `SrpcClientOptions`
 
-| Option            | Type      | Default | Description                  |
-| ----------------- | --------- | ------- | ---------------------------- |
-| `enableReconnect` | `boolean` | `true`  | Auto-reconnect on disconnect |
+| Option            | Type      | Default | Description                                                                                     |
+| ----------------- | --------- | ------- | ----------------------------------------------------------------------------------------------- |
+| `enableReconnect` | `boolean` | `true`  | Auto-reconnect on disconnect                                                                    |
+| `protocolVersion` | `number`  | `2`     | SRPC protocol version. v2 rejects connections on client ID collision unless supersede is requested |
+
+### `connect(options?): Promise<void>`
+
+Returns a promise that resolves on successful handshake, or rejects on failure (conflict, auth, timeout). Can also be called fire-and-forget.
+
+| Option      | Type      | Default | Description                                                      |
+| ----------- | --------- | ------- | ---------------------------------------------------------------- |
+| `supersede` | `boolean` | `false` | When true, kicks the existing connection with the same client ID |
+
+With protocol v2, calling `connect()` when the client ID is already connected on the server will reject with `SrpcConflictError` (no auto-reconnect). Use `connect({ supersede: true })` to explicitly take over.
+
+```typescript
+import { SrpcConflictError } from '@zyno-io/dk-server-foundation';
+
+try {
+    await client.connect();
+} catch (err) {
+    if (err instanceof SrpcConflictError) {
+        // Client ID already connected — prompt user or supersede
+        await client.connect({ supersede: true });
+    }
+}
+```
+
+The disconnect handler also receives the cause:
+
+```typescript
+client.registerDisconnectHandler(cause => {
+    if (cause === 'duplicate') {
+        // Another connection superseded this one
+    }
+});
+```
 
 ## Binary Streams
 
@@ -231,18 +266,35 @@ receiver.on('end', () => {
 | `PENDING_RECEIVER_MAX_BYTES` | 2 MB      | Max buffer before receiver is created       |
 | `PENDING_RECEIVER_TTL_MS`    | 5 seconds | Timeout for pending receiver data           |
 
+## Protocol Versions
+
+SRPC supports protocol versioning via the `_v` query parameter. The server default is v1 (for backwards compatibility with clients that don't send `_v`). The `SrpcClient` default is v2.
+
+**v1:** When a new connection arrives with the same client ID as an existing connection, the existing connection is automatically kicked (`duplicate` cause) and the new connection proceeds. This is the server default when `_v` is not sent (for backwards compatibility with older clients).
+
+**v2 (client default):** When a collision occurs, the *new* connection is rejected with a `conflict` close and the existing connection is left undisturbed. To explicitly supersede the existing connection, call `connect({ supersede: true })`.
+
+To opt into v1 behavior on the client:
+
+```typescript
+const client = new SrpcClient(logger, url, ClientMessage, ServerMessage, 'my-id', undefined, secret, {
+    protocolVersion: 1
+});
+```
+
 ## Disconnect Causes
 
 ```typescript
-type SrpcDisconnectCause = 'disconnect' | 'duplicate' | 'timeout' | 'badArg';
+type SrpcDisconnectCause = 'disconnect' | 'duplicate' | 'conflict' | 'timeout' | 'badArg';
 ```
 
-| Cause        | Description                                |
-| ------------ | ------------------------------------------ |
-| `disconnect` | Normal disconnection                       |
-| `duplicate`  | Another connection with the same client ID |
-| `timeout`    | Heartbeat timeout                          |
-| `badArg`     | Invalid connection arguments               |
+| Cause        | Description                                                      |
+| ------------ | ---------------------------------------------------------------- |
+| `disconnect` | Normal disconnection                                             |
+| `duplicate`  | Another connection superseded this one (same client ID)          |
+| `conflict`   | Connection rejected because client ID is already connected (v2)  |
+| `timeout`    | Heartbeat timeout                                                |
+| `badArg`     | Invalid connection arguments                                     |
 
 ## Error Handling
 

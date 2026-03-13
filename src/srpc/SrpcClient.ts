@@ -16,12 +16,22 @@ import {
     RequestData,
     RequestKeys,
     ResponseData,
+    SrpcDisconnectCause,
     SrpcMessageFns,
     SrpcMeta
 } from './types';
 
+export class SrpcConflictError extends Error {
+    constructor() {
+        super('Connection rejected: client ID already connected');
+        this.name = 'SrpcConflictError';
+    }
+}
+
 export interface SrpcClientOptions {
     enableReconnect?: boolean;
+    /** SRPC protocol version. v2 requires explicit _supersede=1 to kick existing connections. Default: 2. */
+    protocolVersion?: number;
 }
 
 export class SrpcClient<TClientInput extends BaseMessage = BaseMessage, TServerOutput extends BaseMessage = BaseMessage> {
@@ -31,13 +41,17 @@ export class SrpcClient<TClientInput extends BaseMessage = BaseMessage, TServerO
     private streamConnectionHandlers = new Set<() => void>();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     private streamMessageHandlers = new Map<RequestKeys<TServerOutput>, { resultType: string; handler: (data: any) => Promise<any> }>();
-    private streamDisconnectionHandlers = new Set<() => void>();
+    private streamDisconnectionHandlers = new Set<(cause: SrpcDisconnectCause) => void>();
     private reconnectionTimeout?: NodeJS.Timeout;
     private pingInterval?: NodeJS.Timeout;
     private lastPongMs?: number;
     private requestQueue = new Map<string, IQueuedRequest>();
+    private connectResolve?: () => void;
+    private connectReject?: (err: Error) => void;
     private enableReconnect: boolean;
+    private protocolVersion: number;
     private intentionalDisconnect = false;
+    private supersede = false;
     private streamId = '';
 
     public isConnected = false;
@@ -55,6 +69,7 @@ export class SrpcClient<TClientInput extends BaseMessage = BaseMessage, TServerO
         clientOptions?: SrpcClientOptions
     ) {
         this.enableReconnect = clientOptions?.enableReconnect !== false;
+        this.protocolVersion = clientOptions?.protocolVersion ?? 2;
         this.outboundType = clientMessage;
         this.inboundType = serverMessage;
     }
@@ -62,7 +77,17 @@ export class SrpcClient<TClientInput extends BaseMessage = BaseMessage, TServerO
     ////////////////////////////////////////
     // Connection Management
 
-    connect() {
+    connect(options?: { supersede?: boolean }): Promise<void> {
+        if (this.reconnectionTimeout) {
+            clearTimeout(this.reconnectionTimeout);
+            this.reconnectionTimeout = undefined;
+        }
+
+        // Reject any pending connect promise from a previous call
+        this.connectReject?.(new Error('Connection superseded by new connect() call'));
+        this.connectResolve = undefined;
+        this.connectReject = undefined;
+
         if (this.ws) {
             this.intentionalDisconnect = true;
             this.ws.close();
@@ -70,6 +95,7 @@ export class SrpcClient<TClientInput extends BaseMessage = BaseMessage, TServerO
         }
 
         this.intentionalDisconnect = false;
+        this.supersede = options?.supersede ?? false;
         this.logger.info('Connecting...');
 
         this.streamId = uuid7();
@@ -83,6 +109,9 @@ export class SrpcClient<TClientInput extends BaseMessage = BaseMessage, TServerO
 
         const connectTimeout = setTimeout(() => {
             this.logger.warn('Connection timeout');
+            this.connectReject?.(new Error('Connection failed: timeout'));
+            this.connectResolve = undefined;
+            this.connectReject = undefined;
             ws.close();
             this.queueReconnect();
         }, 10_000);
@@ -98,6 +127,16 @@ export class SrpcClient<TClientInput extends BaseMessage = BaseMessage, TServerO
         ws.on('error', (err: Error) => this.handleError(ws, err, clearConnectTimeout));
 
         this.ws = ws;
+
+        const promise = new Promise<void>((resolve, reject) => {
+            this.connectResolve = resolve;
+            this.connectReject = reject;
+        });
+        // Attach a no-op catch so fire-and-forget callers don't trigger
+        // unhandled rejection warnings. The original promise still rejects
+        // normally for callers who await it.
+        promise.catch(() => {});
+        return promise;
     }
 
     disconnect() {
@@ -159,6 +198,11 @@ export class SrpcClient<TClientInput extends BaseMessage = BaseMessage, TServerO
         this.logger.info('Stream established');
         this.isConnected = true;
         this.pingInterval = setInterval(() => this.doPingPong(), 55_000);
+
+        this.connectResolve?.();
+        this.connectResolve = undefined;
+        this.connectReject = undefined;
+
         this.streamConnectionHandlers.forEach(handler => handler());
 
         ws.on('message', async (msgData: Buffer) => this.handleMessage(msgData));
@@ -168,13 +212,33 @@ export class SrpcClient<TClientInput extends BaseMessage = BaseMessage, TServerO
         if (ws !== this.ws) return;
         clearConnectTimeout();
 
+        const reasonStr = String(reason);
+        const cause = this.parseDisconnectCause(code, reasonStr);
+
         if (this.intentionalDisconnect) {
             this.logger.debug('WebSocket closed by client');
+        } else if (cause === 'conflict') {
+            this.logger.warn('Connection rejected: client ID already connected on server');
+            this.connectReject?.(new SrpcConflictError());
+            this.connectResolve = undefined;
+            this.connectReject = undefined;
+            this.handleDisconnect(cause, true);
+            return;
         } else {
-            this.logger.info('Stream ended', { code, reason: String(reason) });
+            this.logger.info('Stream ended', { code, reason: reasonStr });
         }
 
-        this.handleDisconnect();
+        this.handleDisconnect(cause);
+    }
+
+    private parseDisconnectCause(code: number, reason: string): SrpcDisconnectCause {
+        if (code === 4000) {
+            if (reason.includes('already connected')) return 'conflict';
+            if (reason.includes('cause: duplicate')) return 'duplicate';
+            if (reason.includes('cause: timeout')) return 'timeout';
+            return 'badArg';
+        }
+        return 'disconnect';
     }
 
     private handleError(ws: WebSocket, err: Error, clearConnectTimeout: () => void) {
@@ -186,27 +250,31 @@ export class SrpcClient<TClientInput extends BaseMessage = BaseMessage, TServerO
         }
 
         ws.terminate();
-        this.handleDisconnect();
+        this.handleDisconnect('disconnect');
     }
 
-    private handleDisconnect() {
+    private handleDisconnect(cause: SrpcDisconnectCause = 'disconnect', suppressReconnect = false) {
         if (this.reconnectionTimeout) {
             return;
         }
 
-        if (this.enableReconnect) {
+        if (this.enableReconnect && !suppressReconnect) {
             this.queueReconnect();
         }
 
         clearInterval(this.pingInterval!);
         this.pingInterval = undefined;
 
+        this.connectReject?.(new Error(`Connection failed: ${cause}`));
+        this.connectResolve = undefined;
+        this.connectReject = undefined;
+
         const wasConnected = this.isConnected;
         this.isConnected = false;
         this.ws = undefined;
 
         if (wasConnected) {
-            this.streamDisconnectionHandlers.forEach(handler => handler());
+            this.streamDisconnectionHandlers.forEach(handler => handler(cause));
         }
 
         for (const queueItem of this.requestQueue.values()) {
@@ -351,8 +419,14 @@ export class SrpcClient<TClientInput extends BaseMessage = BaseMessage, TServerO
             ts: String(ts),
             id: this.streamId,
             cid,
-            signature
+            signature,
+            _v: String(this.protocolVersion)
         });
+
+        if (this.supersede) {
+            params.set('_supersede', '1');
+            this.supersede = false;
+        }
 
         if (this.clientMeta) {
             for (const [key, value] of Object.entries(this.clientMeta)) {
@@ -441,7 +515,7 @@ export class SrpcClient<TClientInput extends BaseMessage = BaseMessage, TServerO
         });
     }
 
-    registerDisconnectHandler(handler: () => void) {
+    registerDisconnectHandler(handler: (cause: SrpcDisconnectCause) => void) {
         this.streamDisconnectionHandlers.add(handler);
     }
 

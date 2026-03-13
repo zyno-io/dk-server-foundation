@@ -183,6 +183,7 @@ function startTscWatchWithReadySignal(tsconfig: string): { child: ChildProcess; 
 
 async function performLockedWatchBuild(tsconfig: string): Promise<ChildProcess> {
     console.log('Starting dev build...');
+    writeDevState({ ready: false, pids: [] });
     clean();
     const { child, ready } = startTscWatchWithReadySignal(tsconfig);
     await ready;

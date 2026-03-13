@@ -137,7 +137,7 @@ const client = new SrpcClient<ClientMessage, ServerMessage>(
 );
 
 client.registerConnectionHandler(() => console.log('connected'));
-client.registerDisconnectHandler(() => console.log('disconnected'));
+client.registerDisconnectHandler(cause => console.log('disconnected:', cause));
 client.connect();
 
 // Invoke upstream request (just the prefix, no Request/Response suffix)

@@ -155,6 +155,8 @@ export class SrpcServer<
                     clientId,
                     appVersion,
                     configureTs: parseInt(q.ts ?? '0'),
+                    protocolVersion: parseInt(q._v ?? '1'),
+                    supersede: q._supersede === '1',
                     address,
                     meta: {
                         ...meta,
@@ -175,7 +177,7 @@ export class SrpcServer<
 
     private attachConnection(ws: WebSocket, req: IncomingMessage) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const { clientId, clientStreamId, appVersion, address, configureTs, meta } = (req as any)[StreamInfoSymbol];
+        const { clientId, clientStreamId, appVersion, address, configureTs, protocolVersion, supersede, meta } = (req as any)[StreamInfoSymbol];
 
         const streamId = uuid();
 
@@ -197,6 +199,7 @@ export class SrpcServer<
             clientId,
             appVersion,
             configureTs,
+            protocolVersion,
             connectedAt: now,
             lastPingAt: now,
             meta,
@@ -234,7 +237,7 @@ export class SrpcServer<
         ws.on('error', err => this.handleStreamError(stream, err));
         ws.on('close', () => this.handleStreamDisconnected(stream));
 
-        this.handleStreamEstablished(stream);
+        this.handleStreamEstablished(stream, supersede);
     }
 
     private handleWsMessage(stream: SrpcStream<TMeta>, data: WebSocket.Data) {
@@ -260,6 +263,8 @@ export class SrpcServer<
         this.write(stream.$ws, data);
     }
 
+    // IMPORTANT: SrpcClient.parseDisconnectCause() matches on the close reason string
+    // to determine the disconnect cause. If you change these messages, update the client too.
     private closeStreamWithError(stream: SrpcStream<TMeta>, cause: SrpcDisconnectCause, message: string) {
         stream.$ws.close(cause === 'disconnect' ? 1000 : 4000, message.substring(0, 123));
     }
@@ -330,9 +335,20 @@ export class SrpcServer<
     ////////////////////////////////////////
     // Stream Lifecycle
 
-    private handleStreamEstablished(stream: SrpcStream<TMeta>) {
+    private handleStreamEstablished(stream: SrpcStream<TMeta>, supersede: boolean) {
         const conflictingStream = this.streamsByClientId.get(stream.clientId);
         if (conflictingStream) {
+            if (stream.protocolVersion >= 2 && !supersede) {
+                this.logger.warn('Rejecting new connection due to existing client ID', {
+                    streamId: stream.id,
+                    clientId: stream.clientId,
+                    existingStreamId: conflictingStream.id
+                });
+                stream.lastPingAt = -1; // mark as cleaned up so cleanupStream no-ops on ws close
+                this.closeStreamWithError(stream, 'conflict', 'Client ID already connected');
+                return;
+            }
+
             this.logger.warn('Kicking existing stream with same client ID', {
                 streamId: stream.id,
                 clientId: stream.clientId,

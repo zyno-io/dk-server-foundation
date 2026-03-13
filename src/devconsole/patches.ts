@@ -316,8 +316,8 @@ function patchSrpcServer(store: DevConsoleStore) {
     const observer = createDevConsoleSrpcObserver(store);
 
     const origEstablished = SrpcServer.prototype.handleStreamEstablished;
-    SrpcServer.prototype.handleStreamEstablished = function (this: any, stream: any) {
-        origEstablished.call(this, stream);
+    SrpcServer.prototype.handleStreamEstablished = function (this: any, stream: any, supersede: boolean) {
+        origEstablished.call(this, stream, supersede);
         if (!_skipObserverSet.has(this)) {
             observer.onConnectionEstablished?.(stream);
         }

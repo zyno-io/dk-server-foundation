@@ -163,7 +163,7 @@ describe('MeshSrpcServer', () => {
             clientId,
             { userId: `user-${clientId}` },
             'test-secret',
-            { enableReconnect: false }
+            { enableReconnect: false, protocolVersion: 1 }
         );
         clients.push(client);
         return client;
@@ -731,7 +731,7 @@ describe('MeshSrpcServer', () => {
         await server.meshStart();
 
         // Patch updateClientMetadata to count calls
-        
+
         const meshSvc = (server as any).meshClientService;
         const origSvcUpdate = meshSvc.updateClientMetadata.bind(meshSvc);
         meshSvc.updateClientMetadata = async (...args: any[]) => {
