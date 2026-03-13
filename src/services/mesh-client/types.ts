@@ -1,6 +1,7 @@
 export interface RegisteredClient<TMeta> {
     clientId: string;
     nodeId: number;
+    connectedAt: number;
     metadata: TMeta;
 }
 

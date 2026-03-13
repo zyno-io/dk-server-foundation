@@ -28,7 +28,7 @@ const registry = new MeshClientRegistry<ClientMeta>(mesh.instanceId, backend);
 await registry.register('client-123', { userId: 'user-1', role: 'admin' });
 
 const client = await registry.getClient('client-123');
-// { clientId: 'client-123', nodeId: 1, metadata: { userId: 'user-1', role: 'admin' } }
+// { clientId: 'client-123', nodeId: 1, connectedAt: 1710000000000, metadata: { userId: 'user-1', role: 'admin' } }
 
 const all = await registry.listClients();
 const local = await registry.listClientsForNode(mesh.instanceId);
@@ -45,6 +45,7 @@ The `MeshClientRegistryBackend` interface is pluggable — implement your own fo
 ```typescript
 class DatabaseClientRegistry<TMeta> implements MeshClientRegistryBackend<TMeta> {
     async register(clientId: string, nodeId: number, metadata: TMeta): Promise<number | null> {
+        // connectedAt is set automatically by the backend (e.g. NOW() in SQL).
         // Returns the old nodeId if the client was superseded from a different node, or null.
         const existing = await db.query(`SELECT node_id FROM connected_clients WHERE client_id = ?`, [clientId]);
         const supersededNodeId = existing?.nodeId != null && existing.nodeId !== nodeId ? existing.nodeId : null;
@@ -56,6 +57,7 @@ class DatabaseClientRegistry<TMeta> implements MeshClientRegistryBackend<TMeta> 
         return result.affectedRows > 0;
     }
     async updateMetadata(clientId: string, nodeId: number, metadata: TMeta): Promise<boolean> {
+        // Note: connectedAt is preserved — only metadata is updated
         const result = await db.query(`UPDATE connected_clients SET metadata = ? WHERE client_id = ? AND node_id = ?`, [
             JSON.stringify(metadata),
             clientId,
@@ -86,7 +88,7 @@ Creates a registry bound to a specific mesh node ID.
 
 #### `register(clientId, metadata)` → `Promise<number | null>`
 
-Register a client on this node. If the client was previously registered on a different node, the old registration is atomically replaced and the previous node ID is returned. Returns `null` if the client is new or was already on this node.
+Register a client on this node. A `connectedAt` timestamp (epoch ms) is automatically recorded. If the client was previously registered on a different node, the old registration is atomically replaced and the previous node ID is returned. Returns `null` if the client is new or was already on this node.
 
 #### `unregister(clientId)` → `Promise<boolean>`
 
@@ -98,7 +100,7 @@ Update metadata for a registered client. Returns `true` if the client was owned 
 
 #### `getClient(clientId)` → `Promise<RegisteredClient<TMeta> | undefined>`
 
-Look up a client by ID across all nodes.
+Look up a client by ID across all nodes. The returned `RegisteredClient` includes `clientId`, `nodeId`, `connectedAt` (epoch ms), and `metadata`.
 
 #### `listClients()` → `Promise<RegisteredClient<TMeta>[]>`
 
@@ -180,7 +182,7 @@ await clientService.stop();
 | --------------------------------------------------------------- | ---------------------------------------------------- |
 | `start()`                                                       | Start the internal mesh and initialize the registry  |
 | `stop()`                                                        | Clean up own clients, stop the mesh                  |
-| `registerClient(clientId, metadata)`                            | Register a client on this node                       |
+| `registerClient(clientId, metadata)`                            | Register a client on this node (records `connectedAt` automatically) |
 | `unregisterClient(clientId)` → `Promise<boolean>`               | Unregister (returns false if client moved elsewhere) |
 | `updateClientMetadata(clientId, metadata)` → `Promise<boolean>` | Update metadata (returns false if client moved)      |
 | `invoke(clientId, type, data, timeoutMs?)`                      | Invoke on any client, routes automatically           |

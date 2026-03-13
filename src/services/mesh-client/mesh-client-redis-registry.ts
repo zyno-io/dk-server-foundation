@@ -11,7 +11,7 @@ const KEY_TTL_SECONDS = 86400; // 24 hours
 
 // REGISTER atomically moves a client between nodes.
 // KEYS[1] = clients hash, KEYS[2] = new node's set
-// ARGV[1] = clientId, ARGV[2] = nodeId, ARGV[3] = metadataJson, ARGV[4] = setKeyPrefix
+// ARGV[1] = clientId, ARGV[2] = nodeId, ARGV[3] = metadataJson, ARGV[4] = setKeyPrefix, ARGV[5] = connectedAt
 const REGISTER_SCRIPT = `
 local clientsKey = KEYS[1]
 local newSetKey = KEYS[2]
@@ -19,6 +19,7 @@ local clientId = ARGV[1]
 local nodeId = ARGV[2]
 local metadataJson = ARGV[3]
 local setKeyPrefix = ARGV[4]
+local connectedAt = tonumber(ARGV[5])
 local ttl = ${KEY_TTL_SECONDS}
 
 -- Check if client already exists on a different node
@@ -36,7 +37,7 @@ if existing then
 end
 
 -- Set in hash and add to new node's set
-local value = cjson.encode({nodeId = tonumber(nodeId), metadata = cjson.decode(metadataJson)})
+local value = cjson.encode({nodeId = tonumber(nodeId), connectedAt = connectedAt, metadata = cjson.decode(metadataJson)})
 redis.call("hset", clientsKey, clientId, value)
 redis.call("sadd", newSetKey, clientId)
 
@@ -89,7 +90,7 @@ if tostring(parsed.nodeId) ~= nodeId then
     return 0
 end
 
-local value = cjson.encode({nodeId = parsed.nodeId, metadata = cjson.decode(metadataJson)})
+local value = cjson.encode({nodeId = parsed.nodeId, connectedAt = parsed.connectedAt, metadata = cjson.decode(metadataJson)})
 redis.call("hset", clientsKey, clientId, value)
 redis.call("expire", clientsKey, ttl)
 return 1
@@ -128,7 +129,8 @@ type ClientRedisClient = ReturnType<typeof createRedis>['client'] & {
         clientId: string,
         nodeId: string,
         metadataJson: string,
-        setKeyPrefix: string
+        setKeyPrefix: string,
+        connectedAt: string
     ) => Promise<number>;
     MC_UNREGISTER: (clientsKey: string, setKey: string, clientId: string, nodeId: string) => Promise<number>;
     MC_UPDATE_METADATA: (clientsKey: string, clientId: string, nodeId: string, metadataJson: string) => Promise<number>;
@@ -188,7 +190,8 @@ export class MeshClientRedisRegistry<TMeta> implements MeshClientRegistryBackend
             clientId,
             String(nodeId),
             JSON.stringify(metadata),
-            this.nodeSetKeyPrefix()
+            this.nodeSetKeyPrefix(),
+            String(Date.now())
         );
         return result >= 0 ? result : null;
     }
@@ -205,7 +208,7 @@ export class MeshClientRedisRegistry<TMeta> implements MeshClientRegistryBackend
         return result === 1;
     }
 
-    private tryParse(raw: string): { nodeId: number; metadata: TMeta } | undefined {
+    private tryParse(raw: string): { nodeId: number; connectedAt: number; metadata: TMeta } | undefined {
         try {
             return JSON.parse(raw);
         } catch {
@@ -224,6 +227,7 @@ export class MeshClientRedisRegistry<TMeta> implements MeshClientRegistryBackend
         return {
             clientId,
             nodeId: parsed.nodeId,
+            connectedAt: parsed.connectedAt,
             metadata: parsed.metadata
         };
     }
@@ -235,7 +239,7 @@ export class MeshClientRedisRegistry<TMeta> implements MeshClientRegistryBackend
         for (const [clientId, raw] of Object.entries(all)) {
             const parsed = this.tryParse(raw);
             if (parsed) {
-                results.push({ clientId, nodeId: parsed.nodeId, metadata: parsed.metadata });
+                results.push({ clientId, nodeId: parsed.nodeId, connectedAt: parsed.connectedAt, metadata: parsed.metadata });
             }
         }
         return results;
@@ -253,7 +257,7 @@ export class MeshClientRedisRegistry<TMeta> implements MeshClientRegistryBackend
             if (raw) {
                 const parsed = this.tryParse(raw);
                 if (parsed && parsed.nodeId === nodeId) {
-                    results.push({ clientId: clientIds[i], nodeId: parsed.nodeId, metadata: parsed.metadata });
+                    results.push({ clientId: clientIds[i], nodeId: parsed.nodeId, connectedAt: parsed.connectedAt, metadata: parsed.metadata });
                 }
             }
         }
@@ -272,6 +276,7 @@ export class MeshClientRedisRegistry<TMeta> implements MeshClientRegistryBackend
                 removed.push({
                     clientId: result[i + 1],
                     nodeId: parsed.nodeId,
+                    connectedAt: parsed.connectedAt,
                     metadata: parsed.metadata
                 });
             }

@@ -156,6 +156,57 @@ describe('MeshClientService', () => {
         await assert.rejects(svc2.invoke('client-1', 'echo', {}), ClientInvocationError);
     });
 
+    it('connectedAt is stored and retrievable from registry', async () => {
+        const key = `test-mcs-${++keyCounter}`;
+        const svc = createClientService(key, new Map());
+        await svc.start();
+
+        const before = Date.now();
+        await svc.registerClient('client-1', { userId: 'u1' });
+        const after = Date.now();
+
+        const client = await svc.clientRegistry.getClient('client-1');
+        assert.ok(client);
+        assert.ok(client.connectedAt >= before && client.connectedAt <= after);
+    });
+
+    it('connectedAt is preserved after metadata update', async () => {
+        const key = `test-mcs-${++keyCounter}`;
+        const svc = createClientService(key, new Map());
+        await svc.start();
+
+        await svc.registerClient('client-1', { userId: 'u1' });
+        const clientBefore = await svc.clientRegistry.getClient('client-1');
+        assert.ok(clientBefore);
+        const connectedAt = clientBefore.connectedAt;
+
+        await svc.updateClientMetadata('client-1', { userId: 'u1-updated' });
+
+        const clientAfter = await svc.clientRegistry.getClient('client-1');
+        assert.ok(clientAfter);
+        assert.strictEqual(clientAfter.connectedAt, connectedAt);
+        assert.deepStrictEqual(clientAfter.metadata, { userId: 'u1-updated' });
+    });
+
+    it('connectedAt is included in listClients results', async () => {
+        const key = `test-mcs-${++keyCounter}`;
+        const svc = createClientService(key, new Map());
+        await svc.start();
+
+        await svc.registerClient('client-1', { userId: 'u1' });
+        await sleepMs(10);
+        await svc.registerClient('client-2', { userId: 'u2' });
+
+        const clients = await svc.clientRegistry.listClients();
+        assert.strictEqual(clients.length, 2);
+
+        const c1 = clients.find(c => c.clientId === 'client-1')!;
+        const c2 = clients.find(c => c.clientId === 'client-2')!;
+        assert.ok(c1.connectedAt > 0);
+        assert.ok(c2.connectedAt > 0);
+        assert.ok(c2.connectedAt >= c1.connectedAt);
+    });
+
     it('updateClientMetadata updates metadata in registry', async () => {
         const key = `test-mcs-${++keyCounter}`;
         const svc = createClientService(key, new Map());

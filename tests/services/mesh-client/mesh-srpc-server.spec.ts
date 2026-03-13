@@ -33,7 +33,7 @@ class DelayedRegisterBackend<TMeta> implements MeshClientRegistryBackend<TMeta> 
         await this.releaseRegister.promise;
         const existing = this.clients.get(clientId);
         const supersededNodeId = existing && existing.nodeId !== nodeId ? existing.nodeId : null;
-        this.clients.set(clientId, { clientId, nodeId, metadata });
+        this.clients.set(clientId, { clientId, nodeId, connectedAt: Date.now(), metadata });
         return supersededNodeId;
     }
 
