@@ -240,6 +240,150 @@ describe('SRPC Protocol V2', () => {
         });
     });
 
+    describe('cross-pod conflict detection', () => {
+        // Each server needs a unique wsPath so WebSocket connections can be
+        // directed to a specific server. They share the same mesh key so
+        // they use the same Redis-backed client registry.
+        function createServerWithPath(key: string, suffix: string): MeshSrpcServer<TestMeta, ClientMessage, ServerMessage> {
+            const server = new MeshSrpcServer<TestMeta, ClientMessage, ServerMessage, TestMeta>({
+                logger: createLogger('SrpcV2Test'),
+                clientMessage: ClientMessage,
+                serverMessage: ServerMessage,
+                wsPath: `/srpc-v2-test-${key}-${suffix}`,
+                logLevel: false,
+                meshKey: key,
+                meshOptions: FAST_MESH,
+                extractMetadata: stream => ({ userId: stream.meta.userId })
+            });
+            servers.push(server);
+            return server;
+        }
+
+        it('rejects v2 connection when client ID is registered on another node', async () => {
+            const key = `v2-${++keyCounter}`;
+            const server1 = createServerWithPath(key, 'a');
+            const server2 = createServerWithPath(key, 'b');
+            await server1.meshStart();
+            await server2.meshStart();
+            await sleepMs(100);
+
+            // Connect a v2 client to server1
+            const client1 = createClient(`/srpc-v2-test-${key}-a`, 'shared-id');
+            await client1.connect();
+            await sleepMs(200);
+
+            // Verify it's registered on server1's node
+            const regClient = await server1.clientRegistry.getClient('shared-id');
+            assert.ok(regClient);
+            assert.strictEqual(regClient.nodeId, server1.meshInstanceId);
+
+            // A second v2 client connecting to server2 should be rejected.
+            // The server defers activation (pingPong) until registration succeeds.
+            // The atomic registerClient detects the cross-pod conflict and the
+            // connect() promise rejects with SrpcConflictError.
+            const client2 = createClient(`/srpc-v2-test-${key}-b`, 'shared-id');
+            await assert.rejects(
+                () => client2.connect(),
+                err => err instanceof SrpcConflictError
+            );
+
+            // Original client should still be connected and still own the registry entry
+            assert.strictEqual(client1.isConnected, true);
+            assert.strictEqual(client2.isConnected, false);
+            const regAfter = await server1.clientRegistry.getClient('shared-id');
+            assert.ok(regAfter);
+            assert.strictEqual(regAfter.nodeId, server1.meshInstanceId);
+        });
+
+        it('allows v2 connection with supersede flag even when registered on another node', async () => {
+            const key = `v2-${++keyCounter}`;
+            const server1 = createServerWithPath(key, 'a');
+            const server2 = createServerWithPath(key, 'b');
+            await server1.meshStart();
+            await server2.meshStart();
+            await sleepMs(100);
+
+            // Connect client to server1
+            const client1 = createClient(`/srpc-v2-test-${key}-a`, 'shared-id');
+            await client1.connect();
+            await sleepMs(200);
+
+            // Supersede on server2 should bypass cross-pod conflict check
+            const client2 = createClient(`/srpc-v2-test-${key}-b`, 'shared-id');
+            await client2.connect({ supersede: true });
+            await sleepMs(200);
+
+            assert.strictEqual(client2.isConnected, true);
+        });
+
+        it('v1 client is not rejected by cross-pod conflict check', async () => {
+            const key = `v2-${++keyCounter}`;
+            const server1 = createServerWithPath(key, 'a');
+            const server2 = createServerWithPath(key, 'b');
+            await server1.meshStart();
+            await server2.meshStart();
+            await sleepMs(100);
+
+            // Connect a v2 client to server1
+            const client1 = createClient(`/srpc-v2-test-${key}-a`, 'shared-id');
+            await client1.connect();
+            await sleepMs(200);
+
+            // v1 client connecting to server2 should NOT be rejected —
+            // cross-pod check only applies to v2 protocol
+            const client2 = createClient(`/srpc-v2-test-${key}-b`, 'shared-id', { protocolVersion: 1 });
+            await client2.connect();
+            await sleepMs(100);
+
+            assert.strictEqual(client2.isConnected, true);
+        });
+
+        it('allows v2 connection on same node (local check handles it)', async () => {
+            const key = `v2-${++keyCounter}`;
+            const server = createServer(key);
+            await server.meshStart();
+
+            const wsPath = `/srpc-v2-test-${key}`;
+
+            // Connect and then disconnect
+            const client1 = createClient(wsPath, 'shared-id');
+            await client1.connect();
+            await sleepMs(200);
+
+            client1.disconnect();
+            await sleepMs(200);
+
+            // Registry should be clear — new v2 connection should succeed
+            const client2 = createClient(wsPath, 'shared-id');
+            await client2.connect();
+
+            assert.strictEqual(client2.isConnected, true);
+        });
+
+        it('allows v2 connection after previous client on other node disconnects', async () => {
+            const key = `v2-${++keyCounter}`;
+            const server1 = createServerWithPath(key, 'a');
+            const server2 = createServerWithPath(key, 'b');
+            await server1.meshStart();
+            await server2.meshStart();
+            await sleepMs(100);
+
+            // Connect to server1, then disconnect
+            const client1 = createClient(`/srpc-v2-test-${key}-a`, 'shared-id');
+            await client1.connect();
+            await sleepMs(200);
+
+            client1.disconnect();
+            await sleepMs(200);
+
+            // Registry should be clear — v2 connection to server2 should succeed
+            const client2 = createClient(`/srpc-v2-test-${key}-b`, 'shared-id');
+            await client2.connect();
+
+            assert.strictEqual(client2.isConnected, true);
+        });
+    });
+
     describe('disconnect cause', () => {
         it('passes "duplicate" cause when superseded by another connection', async () => {
             const key = `v2-${++keyCounter}`;

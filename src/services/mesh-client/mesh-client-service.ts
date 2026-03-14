@@ -123,14 +123,48 @@ export class MeshClientService<TMeta, TBroadcasts extends MeshBroadcastMap = {}>
         }
     }
 
-    async registerClient(clientId: string, metadata: TMeta): Promise<void> {
-        if (!this.running) return;
-        const supersededNodeId = await this.registry.register(clientId, metadata);
-        if (supersededNodeId !== null) {
-            this.mesh.invoke(supersededNodeId, 'kickClient', { clientId }).catch(err => {
-                this.logger.warn('failed to kick superseded client', { err, clientId, supersededNodeId });
+    /**
+     * Register a client on this node. Returns true if registered, false if
+     * another node owns the client and `allowSupersede` is false (conflict).
+     */
+    async registerClient(clientId: string, metadata: TMeta, allowSupersede = true): Promise<boolean> {
+        if (!this.running) return true;
+        const result = await this.registry.register(clientId, metadata, allowSupersede);
+        if (result.status === 'conflict') {
+            return false;
+        }
+        if (result.supersededNodeId !== null) {
+            this.mesh.invoke(result.supersededNodeId, 'kickClient', { clientId }).catch(err => {
+                this.logger.warn('failed to kick superseded client', { err, clientId, supersededNodeId: result.supersededNodeId });
             });
         }
+        return true;
+    }
+
+    /**
+     * Reserve ownership of a clientId without exposing it for lookup/invoke
+     * until activation completes.
+     */
+    async reserveClient(clientId: string, metadata: TMeta, allowSupersede = true): Promise<boolean> {
+        if (!this.running) return true;
+        const result = await this.registry.reserve(clientId, metadata, allowSupersede);
+        if (result.status === 'conflict') {
+            return false;
+        }
+        if (result.supersededNodeId !== null) {
+            this.mesh.invoke(result.supersededNodeId, 'kickClient', { clientId }).catch(err => {
+                this.logger.warn('failed to kick superseded client', { err, clientId, supersededNodeId: result.supersededNodeId });
+            });
+        }
+        return true;
+    }
+
+    /**
+     * Promote a same-node reservation to an active, discoverable client.
+     */
+    async activateClient(clientId: string, metadata: TMeta): Promise<boolean> {
+        if (!this.running) return false;
+        return this.registry.activate(clientId, metadata);
     }
 
     async unregisterClient(clientId: string): Promise<boolean> {

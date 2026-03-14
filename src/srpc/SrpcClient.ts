@@ -233,7 +233,7 @@ export class SrpcClient<TClientInput extends BaseMessage = BaseMessage, TServerO
 
     private parseDisconnectCause(code: number, reason: string): SrpcDisconnectCause {
         if (code === 4000) {
-            if (reason.includes('already connected')) return 'conflict';
+            if (reason.includes('already connected') || reason.includes('cause: conflict')) return 'conflict';
             if (reason.includes('cause: duplicate')) return 'duplicate';
             if (reason.includes('cause: timeout')) return 'timeout';
             return 'badArg';

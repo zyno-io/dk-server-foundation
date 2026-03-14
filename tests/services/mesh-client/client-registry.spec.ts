@@ -9,6 +9,7 @@ interface TestMeta {
 }
 
 describe('MeshClientRegistry', () => {
+    const keyPrefix = `test-cr-${Date.now()}-${process.pid}`;
     const tf = TestingHelpers.createTestingFacade({
         defaultConfig: {
             REDIS_HOST: 'localhost',
@@ -28,7 +29,7 @@ describe('MeshClientRegistry', () => {
     let registry2: MeshClientRegistry<TestMeta>;
 
     beforeEach(() => {
-        const key = `test-cr-${++keyCounter}`;
+        const key = `${keyPrefix}-${++keyCounter}`;
         backend = new MeshClientRedisRegistry<TestMeta>(key);
         registry1 = new MeshClientRegistry<TestMeta>(1, backend);
         registry2 = new MeshClientRegistry<TestMeta>(2, backend);
@@ -42,6 +43,24 @@ describe('MeshClientRegistry', () => {
         assert.strictEqual(client.clientId, 'client-1');
         assert.strictEqual(client.nodeId, 1);
         assert.deepStrictEqual(client.metadata, { userId: 'u1', role: 'admin' });
+    });
+
+    it('preserves undefined metadata round-trip', async () => {
+        const key = `${keyPrefix}-${++keyCounter}`;
+        const undefinedBackend = new MeshClientRedisRegistry<TestMeta | undefined>(key);
+        const undefinedRegistry = new MeshClientRegistry<TestMeta | undefined>(1, undefinedBackend);
+
+        const result = await undefinedRegistry.register('client-undefined', undefined);
+        assert.deepStrictEqual(result, { status: 'ok', supersededNodeId: null });
+
+        const client = await undefinedRegistry.getClient('client-undefined');
+        assert.ok(client);
+        assert.strictEqual(client.nodeId, 1);
+        assert.strictEqual(client.metadata, undefined);
+
+        const clients = await undefinedRegistry.listClients();
+        assert.strictEqual(clients.length, 1);
+        assert.strictEqual(clients[0].metadata, undefined);
     });
 
     it('lists all clients across nodes', async () => {
@@ -228,21 +247,61 @@ describe('MeshClientRegistry', () => {
         assert.strictEqual(updated, false);
     });
 
-    it('register returns null for new client', async () => {
+    it('register returns ok with no supersession for new client', async () => {
         const result = await registry1.register('client-new', { userId: 'u1', role: 'user' });
-        assert.strictEqual(result, null);
+        assert.deepStrictEqual(result, { status: 'ok', supersededNodeId: null });
     });
 
-    it('register returns null when re-registering on same node', async () => {
+    it('register returns ok with no supersession when re-registering on same node', async () => {
         await registry1.register('client-1', { userId: 'u1', role: 'user' });
         const result = await registry1.register('client-1', { userId: 'u1', role: 'admin' });
-        assert.strictEqual(result, null);
+        assert.deepStrictEqual(result, { status: 'ok', supersededNodeId: null });
     });
 
-    it('register returns superseded nodeId when client moves between nodes', async () => {
+    it('register returns ok with superseded nodeId when client moves between nodes', async () => {
         await registry1.register('client-1', { userId: 'u1', role: 'user' });
         const result = await registry2.register('client-1', { userId: 'u1', role: 'user' });
-        assert.strictEqual(result, 1);
+        assert.deepStrictEqual(result, { status: 'ok', supersededNodeId: 1 });
+    });
+
+    it('register returns conflict when allowSupersede is false and another node owns client', async () => {
+        await registry1.register('client-1', { userId: 'u1', role: 'user' });
+        const result = await registry2.register('client-1', { userId: 'u1', role: 'user' }, false);
+        assert.strictEqual(result.status, 'conflict');
+        assert.strictEqual((result as { status: 'conflict'; ownerNodeId: number | null }).ownerNodeId, 1);
+
+        // Client should still be on node 1 (not moved)
+        const client = await registry1.getClient('client-1');
+        assert.ok(client);
+        assert.strictEqual(client.nodeId, 1);
+    });
+
+    it('register with allowSupersede false succeeds for new client', async () => {
+        const result = await registry1.register('client-new', { userId: 'u1', role: 'user' }, false);
+        assert.deepStrictEqual(result, { status: 'ok', supersededNodeId: null });
+    });
+
+    it('register with allowSupersede false succeeds for same-node re-register', async () => {
+        await registry1.register('client-1', { userId: 'u1', role: 'user' });
+        const result = await registry1.register('client-1', { userId: 'u1', role: 'admin' }, false);
+        assert.deepStrictEqual(result, { status: 'ok', supersededNodeId: null });
+    });
+
+    it('reserve hides client until activate promotes it', async () => {
+        const result = await registry1.reserve('client-pending', { userId: 'u1', role: 'user' });
+        assert.deepStrictEqual(result, { status: 'ok', supersededNodeId: null });
+
+        assert.strictEqual(await registry1.getClient('client-pending'), undefined);
+        assert.deepStrictEqual(await registry1.listClients(), []);
+        assert.deepStrictEqual(await registry1.listClientsForNode(), []);
+
+        const activated = await registry1.activate('client-pending', { userId: 'u1', role: 'user' });
+        assert.strictEqual(activated, true);
+
+        const client = await registry1.getClient('client-pending');
+        assert.ok(client);
+        assert.strictEqual(client.nodeId, 1);
+        assert.deepStrictEqual(client.metadata, { userId: 'u1', role: 'user' });
     });
 
     it('register updates metadata for existing client on same node', async () => {

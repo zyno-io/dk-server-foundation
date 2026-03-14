@@ -34,11 +34,14 @@ export class MeshSrpcServer<
     private disconnectedCallbacks = new Set<(clientId: string, metadata: TRegistryMeta) => void | Promise<void>>();
     private orphanedCallbacks = new Set<(nodeId: number, clients: RegisteredClient<TRegistryMeta>[]) => void | Promise<void>>();
 
-    // Track metadata for disconnect callbacks
+    // Track metadata for connect/disconnect callbacks.
     private clientMetadata = new Map<string, TRegistryMeta>();
+    private lifecycleConnectedStreams = new WeakSet<SrpcStream<TMeta>>();
 
-    // Serialize register/unregister per client to prevent race conditions
-    private clientLifecycleChains = new Map<string, Promise<void>>();
+    // Serialize registry mutations per client to prevent race conditions
+    // without letting slow user callbacks block reconnects.
+    private clientRegistryChains = new Map<string, Promise<void>>();
+    private clientCallbackChains = new Map<string, Promise<void>>();
 
     // Microtask-debounced sync tracking
     private pendingSyncs = new Set<string>();
@@ -68,7 +71,7 @@ export class MeshSrpcServer<
         // Wire up cross-pod duplicate detection: disconnect local stream when
         // the same client connects on a different node.
         this.meshClientService.onClientSuperseded(async clientId => {
-            const stream = this.streamsByClientId.get(clientId);
+            const stream = this.getCurrentStreamByClientId(clientId);
             if (stream) {
                 this.meshLogger.info('Disconnecting superseded client', { clientId });
                 this.cleanupStream(stream, 'duplicate');
@@ -88,7 +91,51 @@ export class MeshSrpcServer<
     }
 
     ////////////////////////////////////////
-    // Lifecycle overrides — auto-register/unregister + proxy-driven meta sync
+    // Post-establish check — reserve mesh ownership before activation
+
+    /**
+     * Defers stream activation until mesh reservation succeeds.
+     * Installs meta proxy and reserves the client atomically in Redis
+     * (respecting allowSupersede for v2), all serialized in the per-client
+     * registry chain. Reserved clients remain hidden from lookup/invoke until
+     * onStreamActivated promotes them to active.
+     *
+     * If registration returns a conflict, cleanupStream is called
+     * (which fires onStreamDisconnected and drains the queue) so
+     * no connection handlers or RPCs ever run on the rejected stream.
+     */
+    protected override postEstablishCheck(stream: SrpcStream<TMeta>): Promise<boolean> {
+        // Install proxy before anything can mutate meta (even though
+        // onStreamConnected hasn't fired yet, code may hold a reference).
+        this.installMetaProxy(stream);
+
+        const metadata = snapshotMetadata(this.extractMeta(stream));
+        this.clientMetadata.set(stream.clientId, metadata);
+
+        const allowSupersede = !(stream.protocolVersion >= 2 && !stream.supersede);
+
+        return this.enqueueClientRegistry(stream.clientId, async () => {
+            // Stream cleaned up during queue wait (disconnect / reconnect)
+            if (stream.lastPingAt < 0 || !this.isCurrentStream(stream)) {
+                return true;
+            }
+
+            const registered = await this.meshClientService.reserveClient(stream.clientId, metadata, allowSupersede);
+            if (!registered) {
+                this.meshLogger.warn('Rejecting stream due to cross-pod conflict', {
+                    streamId: stream.id,
+                    clientId: stream.clientId
+                });
+                this.cleanupStream(stream, 'conflict');
+                return true;
+            }
+
+            return false;
+        });
+    }
+
+    ////////////////////////////////////////
+    // Lifecycle overrides — connection handlers + mesh callbacks
 
     private extractMeta(stream: SrpcStream<TMeta>): TRegistryMeta {
         return this.extractMetadataFn ? this.extractMetadataFn(stream) : (stream.meta as unknown as TRegistryMeta);
@@ -111,7 +158,7 @@ export class MeshSrpcServer<
      * or call `updateClientMetadata()` explicitly.
      */
     private installMetaProxy(stream: SrpcStream<TMeta>): void {
-        // Guard against double-proxy (e.g. meshStart backfill after onStreamConnected)
+        // Guard against double-proxy (e.g. meshStart backfill after postEstablishCheck)
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         if ((stream.meta as any)[MeshSrpcServer.PROXIED]) return;
 
@@ -150,22 +197,59 @@ export class MeshSrpcServer<
         this.pendingSyncs.add(clientId);
         queueMicrotask(() => {
             this.pendingSyncs.delete(clientId);
-            // Only sync if this stream is still the active one for this client
-            if (this.streamsByClientId.get(clientId) === stream) {
+            // Only sync if this stream is still current for this client.
+            if (this.isCurrentStream(stream)) {
                 this.syncStreamMeta(stream);
             }
         });
     }
 
-    protected override onStreamConnected(stream: SrpcStream<TMeta>): void {
-        // Install proxy before anything can mutate meta
-        this.installMetaProxy(stream);
+    protected override async onStreamConnected(stream: SrpcStream<TMeta>): Promise<void> {
+        // Run user-registered connection handlers after the initial ping.
+        // They may mutate stream.meta; the proxy will sync those changes.
+        await super.onStreamConnected(stream);
+    }
 
+    protected override async onStreamActivated(stream: SrpcStream<TMeta>): Promise<void> {
         const metadata = snapshotMetadata(this.extractMeta(stream));
         this.clientMetadata.set(stream.clientId, metadata);
 
-        this.enqueueClientLifecycle(stream.clientId, async () => {
-            await this.meshClientService.registerClient(stream.clientId, metadata);
+        if (this.meshInstanceId !== 0) {
+            const activated = await this.enqueueClientRegistry(stream.clientId, async () => {
+                if (stream.lastPingAt < 0 || this.streamsByClientId.get(stream.clientId) !== stream) {
+                    return false;
+                }
+                return this.meshClientService.activateClient(stream.clientId, metadata);
+            });
+
+            if (!activated) {
+                this.meshLogger.warn('client activation missing mesh reservation', {
+                    streamId: stream.id,
+                    clientId: stream.clientId
+                });
+                this.cleanupStream(stream, 'disconnect');
+                return;
+            }
+        }
+
+        this.syncStreamMeta(stream);
+        await this.enqueueClientCallback(stream.clientId, async () => {
+            // Skip stale connection callbacks for streams that disconnected
+            // or were replaced before activation finished.
+            if (stream.lastPingAt < 0 || this.streamsByClientId.get(stream.clientId) !== stream) {
+                return;
+            }
+
+            if (!this.clientMetadata.has(stream.clientId)) {
+                this.meshLogger.warn('client metadata missing during activation', {
+                    streamId: stream.id,
+                    clientId: stream.clientId
+                });
+                return;
+            }
+
+            this.lifecycleConnectedStreams.add(stream);
+            const metadata = this.clientMetadata.get(stream.clientId) as TRegistryMeta;
             for (const cb of this.connectedCallbacks) {
                 try {
                     await cb(stream.clientId, metadata);
@@ -174,35 +258,45 @@ export class MeshSrpcServer<
                 }
             }
         });
-
-        // Run user-registered connection handlers (may mutate stream.meta — proxy catches it)
-        super.onStreamConnected(stream);
     }
 
     protected override onStreamDisconnected(stream: SrpcStream<TMeta>, cause: SrpcDisconnectCause): void {
         super.onStreamDisconnected(stream, cause);
+        const publishedLifecycle = this.lifecycleConnectedStreams.has(stream);
+        this.lifecycleConnectedStreams.delete(stream);
 
-        this.enqueueClientLifecycle(stream.clientId, async () => {
+        void this.enqueueClientRegistry(stream.clientId, async () => {
             // If a replacement stream is already connected, this is a stale
             // disconnect (same-node reconnect). Skip unregister and callbacks,
             // and leave clientMetadata intact for the new stream.
-            const currentStream = this.streamsByClientId.get(stream.clientId);
+            const currentStream = this.getCurrentStreamByClientId(stream.clientId);
             if (currentStream && currentStream !== stream) {
                 return;
             }
 
-            const metadata = this.clientMetadata.get(stream.clientId);
+            const hasMetadata = this.clientMetadata.has(stream.clientId);
+            const metadata = this.clientMetadata.get(stream.clientId) as TRegistryMeta;
             const removed = await this.meshClientService.unregisterClient(stream.clientId);
-            if (removed && metadata) {
-                for (const cb of this.disconnectedCallbacks) {
-                    try {
-                        await cb(stream.clientId, metadata);
-                    } catch (err) {
-                        this.meshLogger.warn('client disconnected callback error', { err, clientId: stream.clientId });
+            if (removed && hasMetadata && publishedLifecycle) {
+                this.clientMetadata.delete(stream.clientId);
+                void this.enqueueClientCallback(stream.clientId, async () => {
+                    for (const cb of this.disconnectedCallbacks) {
+                        try {
+                            await cb(stream.clientId, metadata);
+                        } catch (err) {
+                            this.meshLogger.warn('client disconnected callback error', { err, clientId: stream.clientId });
+                        }
                     }
-                }
+                });
+            } else if (removed && publishedLifecycle) {
+                this.meshLogger.warn('client metadata missing during disconnect cleanup', {
+                    streamId: stream.id,
+                    clientId: stream.clientId
+                });
+                this.clientMetadata.delete(stream.clientId);
+            } else {
+                this.clientMetadata.delete(stream.clientId);
             }
-            this.clientMetadata.delete(stream.clientId);
         });
     }
 
@@ -212,7 +306,7 @@ export class MeshSrpcServer<
     /**
      * Sync the current stream.meta to the mesh registry.
      * Called automatically by the meta proxy's microtask debounce.
-     * Routed through enqueueClientLifecycle so updates are serialized
+     * Routed through enqueueClientRegistry so updates are serialized
      * after initial registration (prevents lost updates if registration
      * hasn't completed yet).
      */
@@ -226,7 +320,7 @@ export class MeshSrpcServer<
         if (existing && !shallowChanged(existing, metadata)) return;
 
         this.clientMetadata.set(stream.clientId, metadata);
-        this.enqueueClientLifecycle(stream.clientId, async () => {
+        void this.enqueueClientRegistry(stream.clientId, async () => {
             await this.meshClientService.updateClientMetadata(stream.clientId, metadata);
         });
     }
@@ -234,19 +328,41 @@ export class MeshSrpcServer<
     ////////////////////////////////////////
     // Client lifecycle serialization
 
-    private enqueueClientLifecycle(clientId: string, fn: () => Promise<void>): void {
-        const prev = this.clientLifecycleChains.get(clientId) ?? Promise.resolve();
-        const safeFn = () =>
-            fn().catch(err => {
-                this.meshLogger.warn('client lifecycle error', { err, clientId });
-            });
-        const next = prev.then(safeFn, safeFn).finally(() => {
+    private enqueueClientRegistry<T>(clientId: string, fn: () => Promise<T>): Promise<T> {
+        const prev = this.clientRegistryChains.get(clientId) ?? Promise.resolve();
+        const next = prev.then(fn, fn);
+        const safeNext = next.then(
+            () => undefined,
+            err => {
+                this.meshLogger.warn('client registry error', { err, clientId });
+            }
+        );
+        const chain = safeNext.finally(() => {
             // Clean up the chain entry if it's still ours
-            if (this.clientLifecycleChains.get(clientId) === next) {
-                this.clientLifecycleChains.delete(clientId);
+            if (this.clientRegistryChains.get(clientId) === chain) {
+                this.clientRegistryChains.delete(clientId);
             }
         });
-        this.clientLifecycleChains.set(clientId, next);
+        this.clientRegistryChains.set(clientId, chain);
+        return next;
+    }
+
+    private enqueueClientCallback<T>(clientId: string, fn: () => Promise<T>): Promise<T> {
+        const prev = this.clientCallbackChains.get(clientId) ?? Promise.resolve();
+        const next = prev.then(fn, fn);
+        const safeNext = next.then(
+            () => undefined,
+            err => {
+                this.meshLogger.warn('client callback error', { err, clientId });
+            }
+        );
+        const chain = safeNext.finally(() => {
+            if (this.clientCallbackChains.get(clientId) === chain) {
+                this.clientCallbackChains.delete(clientId);
+            }
+        });
+        this.clientCallbackChains.set(clientId, chain);
+        return next;
     }
 
     ////////////////////////////////////////
@@ -313,10 +429,20 @@ export class MeshSrpcServer<
         await this.meshClientService.start();
 
         // Backfill clients that connected before mesh tracking was running.
-        // Route through enqueueClientLifecycle so backfill registrations are
+        // Route through enqueueClientRegistry so backfill registrations are
         // serialized with any concurrent disconnect for the same clientId.
-        const backfillPromises: Promise<void>[] = [];
+        const backfillStreams = new Map<string, SrpcStream<TMeta>>();
+        for (const [clientId, stream] of this.pendingStreamsByClientId) {
+            backfillStreams.set(clientId, stream);
+        }
         for (const [clientId, stream] of this.streamsByClientId) {
+            if (!backfillStreams.has(clientId)) {
+                backfillStreams.set(clientId, stream);
+            }
+        }
+
+        const backfillPromises: Promise<void>[] = [];
+        for (const [clientId, stream] of backfillStreams) {
             // Install proxy if not already proxied (streams that connected before meshStart)
             this.installMetaProxy(stream);
 
@@ -325,14 +451,21 @@ export class MeshSrpcServer<
                 this.clientMetadata.set(clientId, metadata);
             }
             const metadata = this.clientMetadata.get(clientId)!;
-            this.enqueueClientLifecycle(clientId, async () => {
-                // Only register if the stream is still active (hasn't disconnected during startup)
-                const currentStream = this.streamsByClientId.get(clientId);
-                if (currentStream === stream) {
-                    await this.meshClientService.registerClient(clientId, metadata);
+            const allowSupersede = !(stream.protocolVersion >= 2 && !stream.supersede);
+            void this.enqueueClientRegistry(clientId, async () => {
+                // Only backfill the current stream (active or pending).
+                const currentStream = this.getCurrentStreamByClientId(clientId);
+                if (currentStream !== stream) return;
+
+                const registered = stream.isActivated
+                    ? await this.meshClientService.registerClient(clientId, metadata, allowSupersede)
+                    : await this.meshClientService.reserveClient(clientId, metadata, allowSupersede);
+                if (!registered) {
+                    this.meshLogger.warn('Backfill rejected: cross-pod conflict', { clientId });
+                    this.cleanupStream(stream, 'conflict');
                 }
             });
-            const chain = this.clientLifecycleChains.get(clientId);
+            const chain = this.clientRegistryChains.get(clientId);
             if (chain) backfillPromises.push(chain);
         }
         await Promise.all(backfillPromises);
@@ -348,8 +481,15 @@ export class MeshSrpcServer<
 // Helpers
 
 function snapshotMetadata<T>(meta: T): T {
-    if (typeof meta !== 'object' || meta === null) return meta;
+    if (Array.isArray(meta)) return [...meta] as T;
+    if (!isPlainObject(meta)) return meta;
     return { ...meta };
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+    if (typeof value !== 'object' || value === null) return false;
+    const proto = Object.getPrototypeOf(value);
+    return proto === Object.prototype || proto === null;
 }
 
 function shallowChanged(a: unknown, b: unknown): boolean {

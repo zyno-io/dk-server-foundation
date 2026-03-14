@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
+import { createHmac } from 'node:crypto';
 import { describe, it, before, after, afterEach } from 'node:test';
+import WebSocket from 'ws';
 
-import type { MeshClientRegistryBackend, RegisteredClient } from '../../../src';
+import type { MeshClientRegistryBackend, RegisteredClient, RegisterResult } from '../../../src';
 
 import { ClientMessage, ServerMessage } from '../../../resources/proto/generated/test/test';
 import { MeshSrpcServer, ClientNotFoundError, destroyClientRedis, TestingHelpers, disconnectAllRedis, sleepMs, SrpcClient } from '../../../src';
@@ -24,22 +26,49 @@ function createDeferred<T = void>(): {
 }
 
 class DelayedRegisterBackend<TMeta> implements MeshClientRegistryBackend<TMeta> {
-    private clients = new Map<string, RegisteredClient<TMeta>>();
+    private clients = new Map<string, { client: RegisteredClient<TMeta>; state: 'active' | 'pending' }>();
     private registerStarted = createDeferred<void>();
     private releaseRegister = createDeferred<void>();
 
-    async register(clientId: string, nodeId: number, metadata: TMeta): Promise<number | null> {
+    private async registerWithState(
+        clientId: string,
+        nodeId: number,
+        metadata: TMeta,
+        allowSupersede: boolean,
+        state: 'active' | 'pending'
+    ): Promise<RegisterResult> {
         this.registerStarted.resolve();
         await this.releaseRegister.promise;
         const existing = this.clients.get(clientId);
-        const supersededNodeId = existing && existing.nodeId !== nodeId ? existing.nodeId : null;
-        this.clients.set(clientId, { clientId, nodeId, connectedAt: Date.now(), metadata });
-        return supersededNodeId;
+        if (existing && existing.client.nodeId !== nodeId && !allowSupersede) {
+            return { status: 'conflict', ownerNodeId: existing.client.nodeId };
+        }
+        const supersededNodeId = existing && existing.client.nodeId !== nodeId ? existing.client.nodeId : null;
+        this.clients.set(clientId, { client: { clientId, nodeId, connectedAt: Date.now(), metadata }, state });
+        return { status: 'ok', supersededNodeId };
+    }
+
+    async register(clientId: string, nodeId: number, metadata: TMeta, allowSupersede = true): Promise<RegisterResult> {
+        return this.registerWithState(clientId, nodeId, metadata, allowSupersede, 'active');
+    }
+
+    async reserve(clientId: string, nodeId: number, metadata: TMeta, allowSupersede = true): Promise<RegisterResult> {
+        return this.registerWithState(clientId, nodeId, metadata, allowSupersede, 'pending');
+    }
+
+    async activate(clientId: string, nodeId: number, metadata: TMeta): Promise<boolean> {
+        const existing = this.clients.get(clientId);
+        if (!existing || existing.client.nodeId !== nodeId) {
+            return false;
+        }
+        existing.client.metadata = metadata;
+        existing.state = 'active';
+        return true;
     }
 
     async unregister(clientId: string, nodeId: number): Promise<boolean> {
         const existing = this.clients.get(clientId);
-        if (!existing || existing.nodeId !== nodeId) {
+        if (!existing || existing.client.nodeId !== nodeId) {
             return false;
         }
         this.clients.delete(clientId);
@@ -48,27 +77,34 @@ class DelayedRegisterBackend<TMeta> implements MeshClientRegistryBackend<TMeta> 
 
     async updateMetadata(clientId: string, nodeId: number, metadata: TMeta): Promise<boolean> {
         const existing = this.clients.get(clientId);
-        if (!existing || existing.nodeId !== nodeId) {
+        if (!existing || existing.client.nodeId !== nodeId) {
             return false;
         }
-        existing.metadata = metadata;
+        existing.client.metadata = metadata;
         return true;
     }
 
     async getClient(clientId: string): Promise<RegisteredClient<TMeta> | undefined> {
-        return this.clients.get(clientId);
+        const existing = this.clients.get(clientId);
+        return existing?.state === 'active' ? existing.client : undefined;
     }
 
     async listClients(): Promise<RegisteredClient<TMeta>[]> {
-        return Array.from(this.clients.values());
+        return Array.from(this.clients.values())
+            .filter(client => client.state === 'active')
+            .map(client => client.client);
     }
 
     async listClientsForNode(nodeId: number): Promise<RegisteredClient<TMeta>[]> {
-        return Array.from(this.clients.values()).filter(client => client.nodeId === nodeId);
+        return Array.from(this.clients.values())
+            .filter(client => client.state === 'active' && client.client.nodeId === nodeId)
+            .map(client => client.client);
     }
 
     async cleanupNode(nodeId: number): Promise<RegisteredClient<TMeta>[]> {
-        const removed = Array.from(this.clients.values()).filter(client => client.nodeId === nodeId);
+        const removed = Array.from(this.clients.values())
+            .filter(client => client.client.nodeId === nodeId)
+            .map(client => client.client);
         for (const client of removed) {
             this.clients.delete(client.clientId);
         }
@@ -82,14 +118,36 @@ class DelayedRegisterBackend<TMeta> implements MeshClientRegistryBackend<TMeta> 
     continueRegister(): void {
         this.releaseRegister.resolve();
     }
+
+    seedClient(clientId: string, nodeId: number, metadata: TMeta): void {
+        this.clients.set(clientId, { client: { clientId, nodeId, connectedAt: Date.now(), metadata }, state: 'active' });
+    }
+}
+
+class ImmediateRegisterBackend<TMeta> extends DelayedRegisterBackend<TMeta> {
+    constructor() {
+        super();
+        this.continueRegister();
+    }
+}
+
+class ThrowingRegisterBackend<TMeta> extends DelayedRegisterBackend<TMeta> {
+    override async register(_clientId: string, _nodeId: number, _metadata: TMeta, _allowSupersede = true): Promise<RegisterResult> {
+        throw new Error('register boom');
+    }
+
+    override async reserve(_clientId: string, _nodeId: number, _metadata: TMeta, _allowSupersede = true): Promise<RegisterResult> {
+        throw new Error('register boom');
+    }
 }
 
 describe('MeshSrpcServer', () => {
+    const TEST_AUTH_SECRET = 'test-secret';
     const tf = TestingHelpers.createTestingFacade({
         defaultConfig: {
             REDIS_HOST: 'localhost',
             REDIS_PORT: 6379,
-            SRPC_AUTH_SECRET: 'test-secret'
+            SRPC_AUTH_SECRET: TEST_AUTH_SECRET
         }
     });
 
@@ -134,7 +192,10 @@ describe('MeshSrpcServer', () => {
         }
     };
 
-    function createServer(key: string): MeshSrpcServer<TestMeta, ClientMessage, ServerMessage> {
+    function createServer(
+        key: string,
+        options?: { registryBackend?: MeshClientRegistryBackend<TestMeta> }
+    ): MeshSrpcServer<TestMeta, ClientMessage, ServerMessage> {
         const server = new MeshSrpcServer<TestMeta, ClientMessage, ServerMessage, TestMeta>({
             logger: createLogger('MeshSrpcTest'),
             clientMessage: ClientMessage,
@@ -143,13 +204,18 @@ describe('MeshSrpcServer', () => {
             logLevel: false,
             meshKey: key,
             meshOptions: FAST_MESH,
+            registryBackend: options?.registryBackend,
             extractMetadata: stream => ({ userId: stream.meta.userId })
         });
         servers.push(server);
         return server;
     }
 
-    function createClient(wsPath: string, clientId: string): SrpcClient<ClientMessage, ServerMessage> {
+    function createClient(
+        wsPath: string,
+        clientId: string,
+        options?: { protocolVersion?: number; enableReconnect?: boolean }
+    ): SrpcClient<ClientMessage, ServerMessage> {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const httpServer = (tf as any).httpServer;
         const addr = httpServer.address();
@@ -162,11 +228,39 @@ describe('MeshSrpcServer', () => {
             ServerMessage,
             clientId,
             { userId: `user-${clientId}` },
-            'test-secret',
-            { enableReconnect: false, protocolVersion: 1 }
+            TEST_AUTH_SECRET,
+            { enableReconnect: options?.enableReconnect ?? false, protocolVersion: options?.protocolVersion ?? 1 }
         );
         clients.push(client);
         return client;
+    }
+
+    function createRawWsUrl(wsPath: string, clientId: string, options?: { protocolVersion?: number; supersede?: boolean }): string {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const httpServer = (tf as any).httpServer;
+        const addr = httpServer.address();
+        const port = typeof addr === 'object' ? addr?.port : 3000;
+        const protocolVersion = options?.protocolVersion ?? 2;
+        const authv = 1;
+        const appv = '0.0.0';
+        const ts = Date.now();
+        const streamId = `raw-${clientId}-${ts}`;
+        const signature = createHmac('sha256', TEST_AUTH_SECRET).update(`${authv}\n${appv}\n${ts}\n${streamId}\n${clientId}\n`).digest('hex');
+
+        const url = new URL(`ws://127.0.0.1:${port}${wsPath}`);
+        url.searchParams.set('authv', String(authv));
+        url.searchParams.set('appv', appv);
+        url.searchParams.set('ts', String(ts));
+        url.searchParams.set('id', streamId);
+        url.searchParams.set('cid', clientId);
+        url.searchParams.set('signature', signature);
+        url.searchParams.set('_v', String(protocolVersion));
+        url.searchParams.set('m--userId', `user-${clientId}`);
+        if (options?.supersede) {
+            url.searchParams.set('_supersede', '1');
+        }
+
+        return url.toString();
     }
 
     async function waitForConnection(client: SrpcClient<ClientMessage, ServerMessage>): Promise<void> {
@@ -204,6 +298,291 @@ describe('MeshSrpcServer', () => {
         assert.strictEqual(regClient.nodeId, server.meshInstanceId);
     });
 
+    it('rejects connect promptly when mesh registration throws', async () => {
+        const key = `srpc-${++keyCounter}`;
+        const server = createServer(key, { registryBackend: new ThrowingRegisterBackend<TestMeta>() });
+        await server.meshStart();
+
+        const client = createClient(`/mesh-srpc-test-${key}`, 'client-register-throw');
+        const result = await Promise.race([
+            client.connect().then(
+                () => 'resolved' as const,
+                err => err
+            ),
+            sleepMs(2000).then(() => 'timeout' as const)
+        ]);
+
+        assert.notStrictEqual(result, 'timeout');
+        assert.notStrictEqual(result, 'resolved');
+        assert.match((result as Error).message, /Connection failed: disconnect/);
+        assert.strictEqual(client.isConnected, false);
+    });
+
+    it('async connection handlers can invoke after the initial ping without delaying connect()', async () => {
+        const key = `srpc-${++keyCounter}`;
+        const server = createServer(key);
+        await server.meshStart();
+
+        const handlerStarted = createDeferred<void>();
+        const releaseHandler = createDeferred<void>();
+        const handlerInvokedClient = createDeferred<void>();
+
+        server.registerConnectionHandler(async stream => {
+            handlerStarted.resolve();
+            await releaseHandler.promise;
+
+            try {
+                const result = await server.invoke(stream, 'dNotify', { notification: 'hello from async handler' });
+                assert.deepStrictEqual(result, { acknowledged: true });
+                handlerInvokedClient.resolve();
+            } catch (err) {
+                handlerInvokedClient.reject(err);
+            }
+        });
+
+        const client = createClient(`/mesh-srpc-test-${key}`, 'client-handler-order', { protocolVersion: 2 });
+        client.registerMessageHandler('dNotify', async data => {
+            assert.strictEqual(data.notification, 'hello from async handler');
+            return { acknowledged: true };
+        });
+
+        const connectPromise = client.connect();
+
+        await handlerStarted.promise;
+        const connectState = await Promise.race([connectPromise.then(() => 'resolved' as const), sleepMs(100).then(() => 'pending' as const)]);
+        assert.strictEqual(connectState, 'resolved');
+
+        releaseHandler.resolve();
+        await connectPromise;
+
+        await handlerInvokedClient.promise;
+        assert.strictEqual(client.isConnected, true);
+    });
+
+    it('disconnects the stream when a connection handler rejects after the handshake', async () => {
+        const key = `srpc-${++keyCounter}`;
+        const server = createServer(key);
+        await server.meshStart();
+
+        const disconnected = createDeferred<void>();
+        server.registerConnectionHandler(async () => {
+            throw new Error('connect boom');
+        });
+
+        const client = createClient(`/mesh-srpc-test-${key}`, 'client-connect-throw', { protocolVersion: 2 });
+        client.registerDisconnectHandler(() => {
+            disconnected.resolve();
+        });
+
+        await client.connect();
+        await Promise.race([disconnected.promise, sleepMs(2000).then(() => Promise.reject(new Error('disconnect timeout')))]);
+
+        assert.strictEqual(client.isConnected, false);
+    });
+
+    it('does not process client RPCs until async connection handlers succeed', async () => {
+        const key = `srpc-${++keyCounter}`;
+        const server = createServer(key);
+        await server.meshStart();
+
+        const handlerStarted = createDeferred<void>();
+        const releaseHandler = createDeferred<void>();
+        const disconnected = createDeferred<void>();
+        const requestHandled = createDeferred<void>();
+        let handledRequests = 0;
+
+        server.registerConnectionHandler(async () => {
+            handlerStarted.resolve();
+            await releaseHandler.promise;
+            throw new Error('connect boom');
+        });
+        server.registerMessageHandler('uEcho', async (_stream, data) => {
+            handledRequests += 1;
+            requestHandled.resolve();
+            return { message: data.message };
+        });
+
+        const client = createClient(`/mesh-srpc-test-${key}`, 'client-activation-gate', { protocolVersion: 2 });
+        client.registerDisconnectHandler(() => {
+            disconnected.resolve();
+        });
+
+        const connectPromise = client.connect();
+        await handlerStarted.promise;
+        await connectPromise;
+
+        const invokePromise = client.invoke('uEcho', { message: 'should-not-run' }, 500).then(
+            () => 'resolved' as const,
+            err => err
+        );
+        const handledState = await Promise.race([requestHandled.promise.then(() => 'handled' as const), sleepMs(100).then(() => 'pending' as const)]);
+
+        assert.strictEqual(handledState, 'pending');
+
+        releaseHandler.resolve();
+        await Promise.race([disconnected.promise, sleepMs(2000).then(() => Promise.reject(new Error('disconnect timeout')))]);
+
+        const invokeResult = await invokePromise;
+        assert.notStrictEqual(invokeResult, 'resolved');
+        assert.strictEqual(handledRequests, 0);
+    });
+
+    it('buffers client RPCs sent immediately after connect until activation completes', async () => {
+        const key = `srpc-${++keyCounter}`;
+        const server = createServer(key);
+        await server.meshStart();
+
+        const handlerStarted = createDeferred<void>();
+        const releaseHandler = createDeferred<void>();
+        const requestHandled = createDeferred<void>();
+
+        server.registerConnectionHandler(async () => {
+            handlerStarted.resolve();
+            await releaseHandler.promise;
+        });
+
+        server.registerMessageHandler('uEcho', async (_stream, data) => {
+            requestHandled.resolve();
+            return { message: data.message };
+        });
+
+        const client = createClient(`/mesh-srpc-test-${key}`, 'client-buffer-after-connect', { protocolVersion: 2 });
+        const connectPromise = client.connect();
+
+        await handlerStarted.promise;
+        await connectPromise;
+
+        const invokePromise = client.invoke('uEcho', { message: 'after-connect' }, 2000);
+        const handledState = await Promise.race([requestHandled.promise.then(() => 'handled' as const), sleepMs(100).then(() => 'pending' as const)]);
+
+        assert.strictEqual(handledState, 'pending');
+
+        releaseHandler.resolve();
+
+        const result = await invokePromise;
+        assert.deepStrictEqual(result, { message: 'after-connect' });
+    });
+
+    it('preserves client RPC ordering until activation callbacks finish', async () => {
+        const key = `srpc-${++keyCounter}`;
+        const server = createServer(key);
+        await server.meshStart();
+
+        const handlerStarted = createDeferred<void>();
+        const releaseHandler = createDeferred<void>();
+        const connectedCallbackStarted = createDeferred<void>();
+        const releaseConnectedCallback = createDeferred<void>();
+        const handledMessages: string[] = [];
+
+        server.registerConnectionHandler(async stream => {
+            if (stream.clientId !== 'client-buffer-order') return;
+            handlerStarted.resolve();
+            await releaseHandler.promise;
+        });
+        server.onClientConnected(async clientId => {
+            if (clientId !== 'client-buffer-order') return;
+            connectedCallbackStarted.resolve();
+            await releaseConnectedCallback.promise;
+        });
+        server.registerMessageHandler('uEcho', async (_stream, data) => {
+            handledMessages.push(data.message);
+            return { message: data.message };
+        });
+
+        const client = createClient(`/mesh-srpc-test-${key}`, 'client-buffer-order', { protocolVersion: 2 });
+        const connectPromise = client.connect();
+
+        await handlerStarted.promise;
+        await connectPromise;
+
+        const firstInvokePromise = client.invoke('uEcho', { message: 'first' }, 2000);
+
+        releaseHandler.resolve();
+        await connectedCallbackStarted.promise;
+
+        const secondInvokePromise = client.invoke('uEcho', { message: 'second' }, 2000);
+        await sleepMs(100);
+
+        assert.deepStrictEqual(handledMessages, []);
+
+        releaseConnectedCallback.resolve();
+
+        const [firstResult, secondResult] = await Promise.all([firstInvokePromise, secondInvokePromise]);
+        assert.deepStrictEqual(firstResult, { message: 'first' });
+        assert.deepStrictEqual(secondResult, { message: 'second' });
+        assert.deepStrictEqual(handledMessages, ['first', 'second']);
+    });
+
+    it('does not expose a client through the mesh before async activation completes', async () => {
+        const key = `srpc-${++keyCounter}`;
+        const registryBackend = new ImmediateRegisterBackend<TestMeta>();
+        const server1 = createServer(key, { registryBackend });
+        const server2 = createServer(key, { registryBackend });
+        await server1.meshStart();
+        await server2.meshStart();
+
+        const clientId = 'client-async-activation-visibility';
+        const handlerStarted = createDeferred<void>();
+        const releaseHandler = createDeferred<void>();
+        const activated = createDeferred<void>();
+
+        server1.registerConnectionHandler(async stream => {
+            if (stream.clientId !== clientId) return;
+            handlerStarted.resolve();
+            await releaseHandler.promise;
+        });
+        server1.onClientConnected(connectedClientId => {
+            if (connectedClientId === clientId) {
+                activated.resolve();
+            }
+        });
+
+        const client = createClient(`/mesh-srpc-test-${key}`, clientId, { protocolVersion: 2 });
+        client.registerMessageHandler('dNotify', async data => {
+            return { acknowledged: data.notification === 'after-activation' };
+        });
+
+        const connectPromise = client.connect();
+        await handlerStarted.promise;
+        await connectPromise;
+
+        try {
+            await assert.rejects(server2.invoke(clientId, 'dNotify', { notification: 'too-early' }, 200), ClientNotFoundError);
+        } finally {
+            releaseHandler.resolve();
+            await activated.promise;
+        }
+
+        const result = await server2.invoke(clientId, 'dNotify', { notification: 'after-activation' });
+        assert.deepStrictEqual(result, { acknowledged: true });
+    });
+
+    it('onClientConnected can invoke the client immediately after the initial ping', async () => {
+        const key = `srpc-${++keyCounter}`;
+        const server = createServer(key);
+        await server.meshStart();
+
+        const connectedInvoke = new Promise<void>((resolve, reject) => {
+            server.onClientConnected(clientId => {
+                server.invoke(clientId, 'dNotify', { notification: 'hello from connect' }).then(result => {
+                    assert.deepStrictEqual(result, { acknowledged: true });
+                    resolve();
+                }, reject);
+            });
+        });
+
+        const client = createClient(`/mesh-srpc-test-${key}`, 'client-connect-invoke');
+        client.registerMessageHandler('dNotify', async data => {
+            assert.strictEqual(data.notification, 'hello from connect');
+            return { acknowledged: true };
+        });
+
+        await client.connect();
+        await connectedInvoke;
+
+        assert.strictEqual(client.isConnected, true);
+    });
+
     it('auto-unregisters client on disconnect and fires onClientDisconnected', async () => {
         const key = `srpc-${++keyCounter}`;
         const server = createServer(key);
@@ -226,6 +605,40 @@ describe('MeshSrpcServer', () => {
 
         // Verify client removed from registry
         const regClient = await server.clientRegistry.getClient('client-dc');
+        assert.strictEqual(regClient, undefined);
+    });
+
+    it('does not fire onClientDisconnected for a stream that never activated', async () => {
+        const key = `srpc-${++keyCounter}`;
+        const server = createServer(key);
+        await server.meshStart();
+
+        const handlerStarted = createDeferred<void>();
+        const releaseHandler = createDeferred<void>();
+        const disconnected: string[] = [];
+
+        server.registerConnectionHandler(async stream => {
+            if (stream.clientId !== 'client-never-activated') return;
+            handlerStarted.resolve();
+            await releaseHandler.promise;
+        });
+        server.onClientDisconnected(clientId => {
+            disconnected.push(clientId);
+        });
+
+        const client = createClient(`/mesh-srpc-test-${key}`, 'client-never-activated', { protocolVersion: 2 });
+        const connectPromise = client.connect();
+
+        await handlerStarted.promise;
+        await connectPromise;
+
+        client.disconnect();
+        await sleepMs(200);
+        releaseHandler.resolve();
+        await sleepMs(100);
+
+        assert.deepStrictEqual(disconnected, []);
+        const regClient = await server.clientRegistry.getClient('client-never-activated');
         assert.strictEqual(regClient, undefined);
     });
 
@@ -338,6 +751,42 @@ describe('MeshSrpcServer', () => {
         assert.deepStrictEqual(regClient.metadata, { userId: 'user-client-early' });
     });
 
+    it('meshStart backfills clients that are still pending activation when tracking starts', async () => {
+        const key = `srpc-${++keyCounter}`;
+        const server = createServer(key);
+        const clientId = 'client-early-pending';
+        const handlerStarted = createDeferred<void>();
+        const releaseHandler = createDeferred<void>();
+        const activated = createDeferred<void>();
+
+        server.registerConnectionHandler(async stream => {
+            if (stream.clientId !== clientId) return;
+            handlerStarted.resolve();
+            await releaseHandler.promise;
+        });
+        server.onClientConnected(connectedClientId => {
+            if (connectedClientId === clientId) {
+                activated.resolve();
+            }
+        });
+
+        const client = createClient(`/mesh-srpc-test-${key}`, clientId, { protocolVersion: 2 });
+        const connectPromise = client.connect();
+
+        await handlerStarted.promise;
+        await connectPromise;
+
+        await server.meshStart();
+
+        releaseHandler.resolve();
+        await activated.promise;
+
+        const regClient = await server.clientRegistry.getClient(clientId);
+        assert.ok(regClient, 'pending pre-meshStart client should be in registry after activation completes');
+        assert.strictEqual(regClient.nodeId, server.meshInstanceId);
+        assert.deepStrictEqual(regClient.metadata, { userId: `user-${clientId}` });
+    });
+
     it('meshStart backfill does not leave stale entry if client disconnects during startup', async () => {
         const key = `srpc-${++keyCounter}`;
         const server = createServer(key);
@@ -408,6 +857,86 @@ describe('MeshSrpcServer', () => {
         assert.strictEqual(regClient, undefined, 'client should be removed after disconnect queued behind in-flight backfill register');
     });
 
+    it('does not process pipelined client requests before postEstablishCheck accepts the stream', async () => {
+        const key = `srpc-${++keyCounter}`;
+        const registryBackend = new DelayedRegisterBackend<TestMeta>();
+        const server = createServer(key, { registryBackend });
+        await server.meshStart();
+
+        registryBackend.seedClient('client-early-request', server.meshInstanceId + 1, { userId: 'other-node' });
+
+        let handledRequests = 0;
+        server.registerMessageHandler('uEcho', async (_stream, data) => {
+            handledRequests += 1;
+            return { message: data.message };
+        });
+
+        const ws = new WebSocket(createRawWsUrl(`/mesh-srpc-test-${key}`, 'client-early-request', { protocolVersion: 2 }));
+        const closeEvent = new Promise<{ code: number; reason: string }>(resolve => {
+            ws.once('close', (code, reason) => resolve({ code, reason: String(reason) }));
+        });
+
+        await new Promise<void>((resolve, reject) => {
+            ws.once('open', () => resolve());
+            ws.once('error', reject);
+        });
+
+        await registryBackend.waitForRegisterToStart();
+        ws.send(
+            ClientMessage.encode({
+                requestId: 'early-1',
+                reply: false,
+                uEchoRequest: { message: 'should-not-run' }
+            }).finish()
+        );
+
+        registryBackend.continueRegister();
+        const close = await closeEvent;
+
+        assert.strictEqual(close.code, 4000);
+        assert.match(close.reason, /conflict/);
+        assert.strictEqual(handledRequests, 0);
+    });
+
+    it('does not publish a reconnecting stream for local invoke delivery before activation succeeds', async () => {
+        const key = `srpc-${++keyCounter}`;
+        const registryBackend = new DelayedRegisterBackend<TestMeta>();
+        const server = createServer(key, { registryBackend });
+        await server.meshStart();
+
+        const clientId = 'client-reconnect-pending';
+        registryBackend.seedClient(clientId, server.meshInstanceId, { userId: `user-${clientId}` });
+
+        const ws = new WebSocket(createRawWsUrl(`/mesh-srpc-test-${key}`, clientId, { protocolVersion: 2, supersede: true }));
+        const firstFramePromise = new Promise<ReturnType<typeof ServerMessage.decode>>((resolve, reject) => {
+            ws.once('message', data => resolve(ServerMessage.decode(data as Uint8Array)));
+            ws.once('error', reject);
+        });
+
+        await new Promise<void>((resolve, reject) => {
+            ws.once('open', () => resolve());
+            ws.once('error', reject);
+        });
+
+        await registryBackend.waitForRegisterToStart();
+
+        const invokeResultPromise = server.invoke(clientId, 'dNotify', { notification: 'too-early' }, 200).then(
+            () => 'resolved' as const,
+            err => err
+        );
+        const earlyFrame = await Promise.race([firstFramePromise, sleepMs(100).then(() => null)]);
+
+        assert.strictEqual(earlyFrame, null);
+
+        registryBackend.continueRegister();
+
+        const firstFrame = await firstFramePromise;
+        assert.deepStrictEqual(firstFrame.pingPong, {});
+
+        const invokeResult = await invokeResultPromise;
+        assert.notStrictEqual(invokeResult, 'resolved');
+    });
+
     it('same-node reconnect does not fire spurious disconnect callback', async () => {
         const key = `srpc-${++keyCounter}`;
         const server = createServer(key);
@@ -454,6 +983,39 @@ describe('MeshSrpcServer', () => {
         assert.strictEqual(regClientAfter, undefined);
     });
 
+    it('same-client reconnect does not wait for prior onClientConnected callbacks', async () => {
+        const key = `srpc-${++keyCounter}`;
+        const server = createServer(key);
+        await server.meshStart();
+
+        const firstConnectedStarted = createDeferred<void>();
+        const releaseFirstConnected = createDeferred<void>();
+        let blockFirstConnected = true;
+
+        server.onClientConnected(async clientId => {
+            if (clientId !== 'client-recon-pending' || !blockFirstConnected) {
+                return;
+            }
+            blockFirstConnected = false;
+            firstConnectedStarted.resolve();
+            await releaseFirstConnected.promise;
+        });
+
+        const client1 = createClient(`/mesh-srpc-test-${key}`, 'client-recon-pending', { protocolVersion: 2 });
+        await client1.connect();
+        await firstConnectedStarted.promise;
+
+        const client2 = createClient(`/mesh-srpc-test-${key}`, 'client-recon-pending', { protocolVersion: 2 });
+        const connectPromise = client2.connect({ supersede: true });
+        const connectState = await Promise.race([connectPromise.then(() => 'resolved' as const), sleepMs(100).then(() => 'pending' as const)]);
+
+        assert.strictEqual(connectState, 'resolved');
+
+        releaseFirstConnected.resolve();
+        await connectPromise;
+        assert.strictEqual(client2.isConnected, true);
+    });
+
     it('works without extractMetadata (uses stream.meta fallback)', async () => {
         const key = `srpc-${++keyCounter}`;
 
@@ -487,6 +1049,86 @@ describe('MeshSrpcServer', () => {
         // Verify in registry too
         const regClient = await server.clientRegistry.getClient('client-nometa');
         assert.ok(regClient);
+    });
+
+    it('fires lifecycle callbacks for falsy metadata values', async () => {
+        const falsyMetadata = [0, '', false, undefined] as const;
+
+        for (const [index, metadata] of falsyMetadata.entries()) {
+            const key = `srpc-${++keyCounter}`;
+            const server = new MeshSrpcServer<TestMeta, ClientMessage, ServerMessage, typeof metadata>({
+                logger: createLogger('MeshSrpcTest'),
+                clientMessage: ClientMessage,
+                serverMessage: ServerMessage,
+                wsPath: `/mesh-srpc-test-${key}`,
+                logLevel: false,
+                meshKey: key,
+                meshOptions: FAST_MESH,
+                extractMetadata: () => metadata
+            });
+            servers.push(server as unknown as MeshSrpcServer<TestMeta, ClientMessage, ServerMessage>);
+            await server.meshStart();
+
+            const connected: unknown[] = [];
+            const disconnected: unknown[] = [];
+            server.onClientConnected((_clientId, receivedMetadata) => {
+                connected.push(receivedMetadata);
+            });
+            server.onClientDisconnected((_clientId, receivedMetadata) => {
+                disconnected.push(receivedMetadata);
+            });
+
+            const client = createClient(`/mesh-srpc-test-${key}`, `client-falsy-${index}`, { protocolVersion: 2 });
+            await waitForConnection(client);
+            await sleepMs(150);
+
+            client.disconnect();
+            await sleepMs(200);
+
+            assert.deepStrictEqual(connected, [metadata]);
+            assert.deepStrictEqual(disconnected, [metadata]);
+        }
+    });
+
+    it('preserves array metadata shapes when snapshotting for lifecycle and registry state', async () => {
+        const key = `srpc-${++keyCounter}`;
+        const metadata = ['alpha', 'beta'];
+        const registryBackend = new ImmediateRegisterBackend<readonly string[]>();
+        const server = new MeshSrpcServer<TestMeta, ClientMessage, ServerMessage, readonly string[]>({
+            logger: createLogger('MeshSrpcTest'),
+            clientMessage: ClientMessage,
+            serverMessage: ServerMessage,
+            wsPath: `/mesh-srpc-test-${key}`,
+            logLevel: false,
+            meshKey: key,
+            meshOptions: FAST_MESH,
+            registryBackend,
+            extractMetadata: () => metadata
+        });
+        servers.push(server as unknown as MeshSrpcServer<TestMeta, ClientMessage, ServerMessage>);
+        await server.meshStart();
+
+        const connected: ReadonlyArray<string>[] = [];
+        const disconnected: ReadonlyArray<string>[] = [];
+        server.onClientConnected((_clientId, receivedMetadata) => {
+            connected.push(receivedMetadata);
+        });
+        server.onClientDisconnected((_clientId, receivedMetadata) => {
+            disconnected.push(receivedMetadata);
+        });
+
+        const client = createClient(`/mesh-srpc-test-${key}`, 'client-array-meta', { protocolVersion: 2 });
+        await waitForConnection(client);
+        await sleepMs(150);
+
+        const regClient = await server.clientRegistry.getClient('client-array-meta');
+        assert.deepStrictEqual(regClient?.metadata, metadata);
+
+        client.disconnect();
+        await sleepMs(200);
+
+        assert.deepStrictEqual(connected, [metadata]);
+        assert.deepStrictEqual(disconnected, [metadata]);
     });
 
     it('onClientConnected callback error is caught without crashing', async () => {

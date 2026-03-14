@@ -1,4 +1,4 @@
-import type { MeshClientRegistryBackend, RegisteredClient } from './types';
+import type { MeshClientRegistryBackend, RegisteredClient, RegisterResult } from './types';
 
 export class MeshClientRegistry<TMeta> {
     constructor(
@@ -6,8 +6,16 @@ export class MeshClientRegistry<TMeta> {
         private backend: MeshClientRegistryBackend<TMeta>
     ) {}
 
-    async register(clientId: string, metadata: TMeta): Promise<number | null> {
-        return this.backend.register(clientId, this.nodeId, metadata);
+    async register(clientId: string, metadata: TMeta, allowSupersede?: boolean): Promise<RegisterResult> {
+        return this.backend.register(clientId, this.nodeId, metadata, allowSupersede);
+    }
+
+    async reserve(clientId: string, metadata: TMeta, allowSupersede?: boolean): Promise<RegisterResult> {
+        return this.backend.reserve(clientId, this.nodeId, metadata, allowSupersede);
+    }
+
+    async activate(clientId: string, metadata: TMeta): Promise<boolean> {
+        return this.backend.activate(clientId, this.nodeId, metadata);
     }
 
     async unregister(clientId: string): Promise<boolean> {

@@ -126,8 +126,10 @@ export interface SrpcStream<T = SrpcMeta> extends IByteStreamable {
     readonly appVersion: string;
     readonly configureTs: number;
     readonly protocolVersion: number;
+    readonly supersede: boolean;
     readonly meta: T;
     readonly connectedAt: number;
+    isActivated: boolean;
     lastPingAt: number;
 }
 

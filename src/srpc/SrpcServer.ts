@@ -49,7 +49,9 @@ export class SrpcServer<
 
     private clientAuthorizer?: (metadata: SrpcMeta, req: IncomingMessage) => Promise<boolean | SrpcMeta>;
     private clientKeyFetcher?: (clientId: string) => Promise<false | string>;
-    private streamConnectionHandlers = new Set<(stream: SrpcStream<TMeta>) => void>();
+    private streamConnectionHandlers = new Set<(stream: SrpcStream<TMeta>) => void | Promise<void>>();
+    private blockedClientRequests = new WeakSet<SrpcStream<TMeta>>();
+    private pendingClientRequests = new WeakMap<SrpcStream<TMeta>, TClientOutput[]>();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     private streamMessageHandlers = new Map<
         RequestKeys<TClientOutput>,
@@ -61,6 +63,7 @@ export class SrpcServer<
 
     public readonly streamsById = new Map<string, SrpcStream<TMeta>>();
     public readonly streamsByClientId = new Map<string, SrpcStream<TMeta>>();
+    protected readonly pendingStreamsByClientId = new Map<string, SrpcStream<TMeta>>();
 
     constructor(private options: ISrpcServerOptions<TClientOutput, TServerOutput>) {
         const logLevel = options.logLevel ?? 'info';
@@ -200,7 +203,9 @@ export class SrpcServer<
             appVersion,
             configureTs,
             protocolVersion,
+            supersede,
             connectedAt: now,
+            isActivated: false,
             lastPingAt: now,
             meta,
             byteStream: {
@@ -233,7 +238,6 @@ export class SrpcServer<
 
         SrpcByteStream.init(stream, { startId: 2, step: 2 });
 
-        ws.on('message', data => this.handleWsMessage(stream, data));
         ws.on('error', err => this.handleStreamError(stream, err));
         ws.on('close', () => this.handleStreamDisconnected(stream));
 
@@ -261,6 +265,23 @@ export class SrpcServer<
 
     private writeToStream(stream: SrpcStream<TMeta>, data: TServerOutput): void {
         this.write(stream.$ws, data);
+    }
+
+    protected getCurrentStreamByClientId(clientId: string): SrpcStream<TMeta> | undefined {
+        return this.pendingStreamsByClientId.get(clientId) ?? this.streamsByClientId.get(clientId);
+    }
+
+    protected isCurrentStream(stream: SrpcStream<TMeta>): boolean {
+        return this.getCurrentStreamByClientId(stream.clientId) === stream;
+    }
+
+    private activateStream(stream: SrpcStream<TMeta>): void {
+        if (stream.lastPingAt < 0 || !this.isCurrentStream(stream)) {
+            return;
+        }
+        this.pendingStreamsByClientId.delete(stream.clientId);
+        stream.isActivated = true;
+        this.streamsByClientId.set(stream.clientId, stream);
     }
 
     // IMPORTANT: SrpcClient.parseDisconnectCause() matches on the close reason string
@@ -336,7 +357,7 @@ export class SrpcServer<
     // Stream Lifecycle
 
     private handleStreamEstablished(stream: SrpcStream<TMeta>, supersede: boolean) {
-        const conflictingStream = this.streamsByClientId.get(stream.clientId);
+        const conflictingStream = this.getCurrentStreamByClientId(stream.clientId);
         if (conflictingStream) {
             if (stream.protocolVersion >= 2 && !supersede) {
                 this.logger.warn('Rejecting new connection due to existing client ID', {
@@ -357,11 +378,71 @@ export class SrpcServer<
             this.cleanupStream(conflictingStream, 'duplicate');
         }
 
+        // Register in local maps before the async hook so lifecycle chains
+        // can observe the replacement stream without exposing it for
+        // clientId-based delivery until activation succeeds.
         this.streamsById.set(stream.id, stream);
-        this.streamsByClientId.set(stream.clientId, stream);
-        this.onStreamConnected(stream);
+        this.pendingStreamsByClientId.set(stream.clientId, stream);
+        this.blockedClientRequests.add(stream);
 
-        this.writeToStream(stream, { pingPong: {} } as TServerOutput);
+        // Async hook for subclass checks (e.g. cross-pod mesh registration).
+        // Activation is deferred until the hook resolves, so no handlers run
+        // and no RPCs are processed until the subclass confirms the stream
+        // should proceed.
+        this.postEstablishCheck(stream)
+            .then(async rejected => {
+                if (rejected) return; // subclass already called cleanupStream
+                // Stream may have been cleaned up during the async gap
+                if (stream.lastPingAt < 0) return;
+                // Preserve pingPong as the first server frame. Client traffic sent
+                // before activation completes is queued until activation succeeds,
+                // unless it is a reply to a server-initiated request.
+                this.writeToStream(stream, { pingPong: {} } as TServerOutput);
+                stream.$ws.on('message', data => this.handleWsMessage(stream, data));
+                try {
+                    await this.onStreamConnected(stream);
+                } catch (err) {
+                    this.logger.error('onStreamConnected failed, disconnecting stream', err, {
+                        streamId: stream.id,
+                        clientId: stream.clientId
+                    });
+                    this.cleanupStream(stream, 'disconnect');
+                    return;
+                }
+                if (stream.lastPingAt < 0) return;
+                this.activateStream(stream);
+                if (!stream.isActivated) return;
+                try {
+                    await this.onStreamActivated(stream);
+                } catch (err) {
+                    this.logger.error('onStreamActivated failed, disconnecting stream', err, {
+                        streamId: stream.id,
+                        clientId: stream.clientId
+                    });
+                    this.cleanupStream(stream, 'disconnect');
+                    return;
+                }
+                if (stream.lastPingAt < 0 || !stream.isActivated) return;
+                this.openClientRequests(stream);
+            })
+            .catch(err => {
+                this.logger.error('postEstablishCheck failed, disconnecting stream', err, {
+                    streamId: stream.id,
+                    clientId: stream.clientId
+                });
+                this.cleanupStream(stream, 'disconnect');
+            });
+    }
+
+    /**
+     * Async hook called after a stream is registered in local maps but before
+     * the initial handshake ping is sent. Return true to reject the stream;
+     * the subclass must call cleanupStream() before returning true. The base
+     * implementation accepts all streams immediately.
+     */
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    protected postEstablishCheck(_stream: SrpcStream<TMeta>): Promise<boolean> {
+        return Promise.resolve(false);
     }
 
     private handleStreamDisconnected(stream: SrpcStream<TMeta>): void {
@@ -396,8 +477,13 @@ export class SrpcServer<
 
         stream.$queue.forEach(item => item.reject(new Error('Stream disconnected')));
         stream.$queue.clear();
+        this.blockedClientRequests.delete(stream);
+        this.pendingClientRequests.delete(stream);
 
         this.streamsById.delete(stream.id);
+        if (this.pendingStreamsByClientId.get(stream.clientId) === stream) {
+            this.pendingStreamsByClientId.delete(stream.clientId);
+        }
 
         if (this.streamsByClientId.get(stream.clientId) === stream) {
             this.streamsByClientId.delete(stream.clientId);
@@ -419,6 +505,14 @@ export class SrpcServer<
 
         const { id: streamId, clientId } = stream;
         const { requestId, reply } = data;
+
+        if ((!stream.isActivated || this.blockedClientRequests.has(stream)) && !reply) {
+            const queued = this.pendingClientRequests.get(stream) ?? [];
+            queued.push(data);
+            this.pendingClientRequests.set(stream, queued);
+            this.logger.debug('Queueing client request before stream activation', { streamId, clientId, requestId });
+            return;
+        }
 
         const logObject = {
             streamId,
@@ -509,6 +603,17 @@ export class SrpcServer<
         throw new Error('Unhandled message type');
     }
 
+    private openClientRequests(stream: SrpcStream<TMeta>): void {
+        this.blockedClientRequests.delete(stream);
+        const queued = this.pendingClientRequests.get(stream);
+        if (!queued?.length) return;
+
+        this.pendingClientRequests.delete(stream);
+        for (const request of queued) {
+            this.handleStreamDataReceived(stream, request);
+        }
+    }
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     protected async runMessageHandler(handler: TSrpcMessageHandlerFnOrClass<SrpcStream<TMeta>, any, any>, stream: SrpcStream<TMeta>, data: any) {
         if (isSrpcMessageHandlerClass(handler)) {
@@ -520,9 +625,13 @@ export class SrpcServer<
         return handler(stream, data);
     }
 
-    protected onStreamConnected(stream: SrpcStream<TMeta>): void {
-        this.streamConnectionHandlers.forEach(handler => handler(stream));
+    protected async onStreamConnected(stream: SrpcStream<TMeta>): Promise<void> {
+        for (const handler of this.streamConnectionHandlers) {
+            await handler(stream);
+        }
     }
+
+    protected onStreamActivated(_stream: SrpcStream<TMeta>): void | Promise<void> {}
 
     protected onStreamDisconnected(stream: SrpcStream<TMeta>, cause: SrpcDisconnectCause): void {
         this.streamDisconnectionHandlers.forEach(handler => handler(stream, cause));
@@ -531,7 +640,11 @@ export class SrpcServer<
     ////////////////////////////////////////
     // Public API
 
-    registerConnectionHandler(handler: (stream: SrpcStream<TMeta>) => void) {
+    /**
+     * Register a handler that runs after the initial handshake ping is sent.
+     * Throwing or rejecting aborts activation and disconnects the stream.
+     */
+    registerConnectionHandler(handler: (stream: SrpcStream<TMeta>) => void | Promise<void>) {
         this.streamConnectionHandlers.add(handler);
     }
 
