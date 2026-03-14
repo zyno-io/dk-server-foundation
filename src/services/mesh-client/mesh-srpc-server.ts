@@ -65,6 +65,20 @@ export class MeshSrpcServer<
                 }
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 return super.invoke(stream, type as any, data as any, timeoutMs);
+            },
+            clientUpdateMetaFn: (clientId: string, metadata: TRegistryMeta): boolean => {
+                const stream = this.streamsByClientId.get(clientId);
+                if (!stream) return false;
+
+                // Merge registry metadata onto stream.meta.
+                // The proxy traps fire scheduleSyncStreamMeta for each set,
+                // but microtask debounce batches them into a single Redis update.
+                const meta = stream.meta as Record<string, unknown>;
+                const update = metadata as Record<string, unknown>;
+                for (const key of Object.keys(update)) {
+                    meta[key] = update[key];
+                }
+                return true;
             }
         }) as MeshClientService<TRegistryMeta, TBroadcasts>;
 
@@ -320,8 +334,11 @@ export class MeshSrpcServer<
         if (existing && !shallowChanged(existing, metadata)) return;
 
         this.clientMetadata.set(stream.clientId, metadata);
+        // Write directly to the registry (always local/owning node).
+        // Do NOT route through meshClientService.updateClientMetadata here —
+        // that would loop back into clientUpdateMetaFn → stream.meta → proxy.
         void this.enqueueClientRegistry(stream.clientId, async () => {
-            await this.meshClientService.updateClientMetadata(stream.clientId, metadata);
+            await this.clientRegistry.updateMetadata(stream.clientId, metadata);
         });
     }
 
@@ -377,14 +394,25 @@ export class MeshSrpcServer<
     }
 
     /**
-     * Explicitly update metadata for a client in the registry.
-     * Use this for cross-pod updates where you don't have the local stream.
-     * For local streams, just mutate stream.meta directly — the proxy auto-syncs.
+     * Update metadata for a client, regardless of which node owns it.
+     * Routes through the mesh to the owning node so that stream.meta
+     * reflects the change immediately and the proxy auto-syncs to Redis.
+     * For local streams, you can also mutate stream.meta directly.
      */
     async updateClientMetadata(clientId: string, metadata: TRegistryMeta): Promise<boolean> {
+        // Set clientMetadata eagerly so the proxy's deferred syncStreamMeta
+        // sees shallowChanged=false and skips the redundant Redis write.
+        const previous = this.clientMetadata.get(clientId);
+        this.clientMetadata.set(clientId, snapshotMetadata(metadata));
+
         const updated = await this.meshClientService.updateClientMetadata(clientId, metadata);
-        if (updated) {
-            this.clientMetadata.set(clientId, metadata);
+        if (!updated) {
+            // Restore on failure
+            if (previous !== undefined) {
+                this.clientMetadata.set(clientId, previous);
+            } else {
+                this.clientMetadata.delete(clientId);
+            }
         }
         return updated;
     }

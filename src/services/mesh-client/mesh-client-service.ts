@@ -12,9 +12,13 @@ type ForwardResponse = { data?: unknown; error?: string; errorName?: string };
 type KickClientRequest = { clientId: string };
 type KickClientResponse = { kicked: boolean };
 
+type UpdateMetaRequest = { clientId: string; metadata: unknown };
+type UpdateMetaResponse = { updated: boolean };
+
 type ForwardMessages = {
     forward: { request: ForwardRequest; response: ForwardResponse };
     kickClient: { request: KickClientRequest; response: KickClientResponse };
+    updateMeta: { request: UpdateMetaRequest; response: UpdateMetaResponse };
 };
 
 // --- Options ---
@@ -24,6 +28,7 @@ export interface MeshClientServiceOptions<TMeta> {
     meshOptions?: MeshServiceOptions;
     registryBackend?: MeshClientRegistryBackend<TMeta>;
     clientInvokeFn: (clientId: string, type: string, data: unknown, timeoutMs?: number) => Promise<unknown>;
+    clientUpdateMetaFn?: (clientId: string, metadata: TMeta) => boolean;
 }
 
 // --- MeshClientService ---
@@ -37,12 +42,14 @@ export class MeshClientService<TMeta, TBroadcasts extends MeshBroadcastMap = {}>
     private registry: MeshClientRegistry<TMeta>;
     private backend: MeshClientRegistryBackend<TMeta>;
     private clientInvokeFn: MeshClientServiceOptions<TMeta>['clientInvokeFn'];
+    private clientUpdateMetaFn: MeshClientServiceOptions<TMeta>['clientUpdateMetaFn'];
     private nodeCleanedUpCallbacks: ((nodeId: number, orphaned: RegisteredClient<TMeta>[]) => void | Promise<void>)[] = [];
     private clientSupersededCallbacks: ((clientId: string) => void | Promise<void>)[] = [];
 
     constructor(options: MeshClientServiceOptions<TMeta>) {
         this.backend = options.registryBackend ?? new MeshClientRedisRegistry<TMeta>(`_mc:${options.key}`);
         this.clientInvokeFn = options.clientInvokeFn;
+        this.clientUpdateMetaFn = options.clientUpdateMetaFn;
 
         this.mesh = new MeshService<ForwardMessages, TBroadcasts>(`_mc:${options.key}`, options.meshOptions);
         this.mesh.registerHandler('forward', async (req: ForwardRequest): Promise<ForwardResponse> => {
@@ -68,6 +75,11 @@ export class MeshClientService<TMeta, TBroadcasts extends MeshBroadcastMap = {}>
                 }
             }
             return { kicked };
+        });
+
+        this.mesh.registerHandler('updateMeta', async (req: UpdateMetaRequest): Promise<UpdateMetaResponse> => {
+            const updated = this.clientUpdateMetaFn?.(req.clientId, req.metadata as TMeta) ?? false;
+            return { updated };
         });
 
         this.mesh.setNodeCleanedUpCallback(async (nodeId: number) => {
@@ -174,7 +186,24 @@ export class MeshClientService<TMeta, TBroadcasts extends MeshBroadcastMap = {}>
 
     async updateClientMetadata(clientId: string, metadata: TMeta): Promise<boolean> {
         if (!this.running) return false;
-        return this.registry.updateMetadata(clientId, metadata);
+
+        const client = await this.registry.getClient(clientId);
+        if (!client) return false;
+
+        // Local — apply to stream.meta and update registry directly.
+        if (client.nodeId === this.mesh.instanceId) {
+            this.clientUpdateMetaFn?.(clientId, metadata);
+            return this.registry.updateMetadata(clientId, metadata);
+        }
+
+        // Remote — route through mesh to the owning node
+        try {
+            const response = await this.mesh.invoke(client.nodeId, 'updateMeta', { clientId, metadata });
+            return response.updated;
+        } catch (err) {
+            this.logger.warn('cross-pod metadata update failed', { err, clientId, targetNodeId: client.nodeId });
+            return false;
+        }
     }
 
     registerBroadcastHandler<K extends keyof TBroadcasts & string>(

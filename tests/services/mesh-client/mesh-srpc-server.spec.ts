@@ -1284,6 +1284,37 @@ describe('MeshSrpcServer', () => {
         assert.strictEqual(updated, false);
     });
 
+    it('updateClientMetadata restores clientMetadata on failure', async () => {
+        const key = `srpc-${++keyCounter}`;
+        const server = createServer(key);
+        await server.meshStart();
+
+        const client = createClient(`/mesh-srpc-test-${key}`, 'client-rollback');
+        await waitForConnection(client);
+        await sleepMs(200);
+
+        // Verify initial metadata is cached
+        const clientMetadata = (server as any).clientMetadata as Map<string, TestMeta>;
+        const initial = clientMetadata.get('client-rollback');
+        assert.ok(initial);
+        assert.deepStrictEqual(initial, { userId: 'user-client-rollback' });
+
+        // Make registry.updateMetadata fail by stubbing it
+        const registry = server.clientRegistry;
+        const origUpdate = registry.updateMetadata.bind(registry);
+        registry.updateMetadata = async () => false;
+
+        const updated = await server.updateClientMetadata('client-rollback', { userId: 'should-rollback' });
+        assert.strictEqual(updated, false);
+
+        // clientMetadata should be restored to the original value
+        const restored = clientMetadata.get('client-rollback');
+        assert.deepStrictEqual(restored, { userId: 'user-client-rollback' });
+
+        // Restore stub so cleanup works
+        registry.updateMetadata = origUpdate;
+    });
+
     it('broadcast and registerBroadcastHandler work across nodes', async () => {
         const key = `srpc-${++keyCounter}`;
 
@@ -1445,11 +1476,11 @@ describe('MeshSrpcServer', () => {
 
         // Mutate meta after meshStart — should trigger exactly one sync
         let updateCount = 0;
-        const meshSvc = (server as any).meshClientService;
-        const origUpdate = meshSvc.updateClientMetadata.bind(meshSvc);
-        meshSvc.updateClientMetadata = async (...args: any[]) => {
+        const registry = server.clientRegistry;
+        const origUpdate = registry.updateMetadata.bind(registry);
+        registry.updateMetadata = async (clientId: string, metadata: any) => {
             updateCount++;
-            return origUpdate(...args);
+            return origUpdate(clientId, metadata);
         };
 
         // Access the stream to mutate its meta
@@ -1501,6 +1532,213 @@ describe('MeshSrpcServer', () => {
 
         // The original client's WebSocket should have been kicked
         assert.strictEqual(srpcDisconnected, true, 'original client should have been disconnected');
+    });
+
+    it('cross-node updateClientMetadata routes through mesh and updates owning stream.meta', async () => {
+        const key = `srpc-${++keyCounter}`;
+        const server1 = createServer(key);
+        const server2 = createServer(key);
+        await server1.meshStart();
+        await server2.meshStart();
+        await sleepMs(100);
+
+        // Connect client to server1
+        const client = createClient(`/mesh-srpc-test-${key}`, 'client-xmeta');
+        await waitForConnection(client);
+        await sleepMs(200);
+
+        // Verify initial metadata on server1
+        const stream = server1.streamsByClientId.get('client-xmeta');
+        assert.ok(stream);
+        assert.strictEqual(stream.meta.userId, 'user-client-xmeta');
+
+        // Update metadata from server2 (non-owning node)
+        const updated = await server2.updateClientMetadata('client-xmeta', { userId: 'cross-pod-update' });
+        assert.strictEqual(updated, true);
+
+        // Allow the proxy sync microtask to fire and update Redis
+        await sleepMs(200);
+
+        // Verify stream.meta on owning pod (server1) was updated
+        assert.strictEqual(stream.meta.userId, 'cross-pod-update');
+
+        // Verify registry reflects the update
+        const regClient = await server1.clientRegistry.getClient('client-xmeta');
+        assert.ok(regClient);
+        assert.deepStrictEqual(regClient.metadata, { userId: 'cross-pod-update' });
+    });
+
+    it('cross-node updateClientMetadata returns false for non-existent client', async () => {
+        const key = `srpc-${++keyCounter}`;
+        const server1 = createServer(key);
+        const server2 = createServer(key);
+        await server1.meshStart();
+        await server2.meshStart();
+        await sleepMs(100);
+
+        const updated = await server2.updateClientMetadata('nonexistent', { userId: 'nope' });
+        assert.strictEqual(updated, false);
+    });
+
+    it('cross-node updateClientMetadata updates disconnect callback metadata', async () => {
+        const key = `srpc-${++keyCounter}`;
+        const server1 = createServer(key);
+        const server2 = createServer(key);
+        await server1.meshStart();
+        await server2.meshStart();
+        await sleepMs(100);
+
+        const client = createClient(`/mesh-srpc-test-${key}`, 'client-xdiscon');
+        await waitForConnection(client);
+        await sleepMs(200);
+
+        // Update metadata from non-owning node
+        await server2.updateClientMetadata('client-xdiscon', { userId: 'updated-from-remote' });
+        await sleepMs(200);
+
+        // Register disconnect handler on owning server
+        const disconnected: { clientId: string; metadata: TestMeta }[] = [];
+        server1.onClientDisconnected((clientId, metadata) => {
+            disconnected.push({ clientId, metadata });
+        });
+
+        client.disconnect();
+        await sleepMs(200);
+
+        assert.strictEqual(disconnected.length, 1);
+        assert.deepStrictEqual(disconnected[0].metadata, { userId: 'updated-from-remote' });
+    });
+
+    it('local updateClientMetadata updates stream.meta immediately', async () => {
+        const key = `srpc-${++keyCounter}`;
+        const server = createServer(key);
+        await server.meshStart();
+
+        const client = createClient(`/mesh-srpc-test-${key}`, 'client-localmeta');
+        await waitForConnection(client);
+        await sleepMs(200);
+
+        const stream = server.streamsByClientId.get('client-localmeta');
+        assert.ok(stream);
+        assert.strictEqual(stream.meta.userId, 'user-client-localmeta');
+
+        // Update metadata locally — should update stream.meta AND registry
+        const updated = await server.updateClientMetadata('client-localmeta', { userId: 'local-update' });
+        assert.strictEqual(updated, true);
+
+        // stream.meta should reflect immediately (no microtask wait needed)
+        assert.strictEqual(stream.meta.userId, 'local-update');
+
+        // Registry should also be updated (direct write, not proxy path)
+        const regClient = await server.clientRegistry.getClient('client-localmeta');
+        assert.ok(regClient);
+        assert.deepStrictEqual(regClient.metadata, { userId: 'local-update' });
+    });
+
+    it('local updateClientMetadata does not cause redundant registry write', async () => {
+        const key = `srpc-${++keyCounter}`;
+        const server = createServer(key);
+        await server.meshStart();
+
+        const client = createClient(`/mesh-srpc-test-${key}`, 'client-nodup');
+        await waitForConnection(client);
+        await sleepMs(200);
+
+        // Spy on registry.updateMetadata to count calls
+        let updateCount = 0;
+        const registry = server.clientRegistry;
+        const origUpdate = registry.updateMetadata.bind(registry);
+        registry.updateMetadata = async (clientId: string, metadata: any) => {
+            updateCount++;
+            return origUpdate(clientId, metadata);
+        };
+
+        // Update metadata — should trigger exactly 1 registry write (direct),
+        // NOT 2 (proxy sync should see shallowChanged=false and skip)
+        await server.updateClientMetadata('client-nodup', { userId: 'no-dup-write' });
+        await sleepMs(200); // Wait for any proxy microtask to settle
+
+        assert.strictEqual(updateCount, 1, `expected 1 registry write, got ${updateCount}`);
+    });
+
+    it('cross-node updateClientMetadata returns false when stream disconnects before handler', async () => {
+        const key = `srpc-${++keyCounter}`;
+        const server1 = createServer(key);
+        const server2 = createServer(key);
+        await server1.meshStart();
+        await server2.meshStart();
+        await sleepMs(100);
+
+        const client = createClient(`/mesh-srpc-test-${key}`, 'client-xdiscon2');
+        await waitForConnection(client);
+        await sleepMs(200);
+
+        // Verify client is on server1
+        const regClient = await server1.clientRegistry.getClient('client-xdiscon2');
+        assert.ok(regClient);
+        assert.strictEqual(regClient.nodeId, server1.meshInstanceId);
+
+        // Disconnect the client before updating
+        client.disconnect();
+        await sleepMs(200);
+
+        // Cross-node update should return false since stream is gone
+        const updated = await server2.updateClientMetadata('client-xdiscon2', { userId: 'too-late' });
+        assert.strictEqual(updated, false);
+    });
+
+    it('updateClientMetadata returns false for pending-state client', async () => {
+        const key = `srpc-${++keyCounter}`;
+        const backend = new ImmediateRegisterBackend<TestMeta>();
+        const server = createServer(key, { registryBackend: backend });
+        await server.meshStart();
+
+        // Seed a pending-state client directly in the backend
+        // (ImmediateRegisterBackend inherits seedClient which sets state='active',
+        // so we use the reserve method to get a pending client)
+        const meshSvc = (server as any).meshClientService;
+        await meshSvc.reserveClient('client-pending', { userId: 'pending-user' });
+
+        // getClient filters out pending clients, so updateClientMetadata should return false
+        const regClient = await server.clientRegistry.getClient('client-pending');
+        assert.strictEqual(regClient, undefined, 'pending client should not be discoverable via getClient');
+
+        const updated = await server.updateClientMetadata('client-pending', { userId: 'nope' });
+        assert.strictEqual(updated, false);
+    });
+
+    it('concurrent stream.meta mutation and cross-node updateClientMetadata', async () => {
+        const key = `srpc-${++keyCounter}`;
+        const server1 = createServer(key);
+        const server2 = createServer(key);
+        await server1.meshStart();
+        await server2.meshStart();
+        await sleepMs(100);
+
+        const client = createClient(`/mesh-srpc-test-${key}`, 'client-race');
+        await waitForConnection(client);
+        await sleepMs(200);
+
+        const stream = server1.streamsByClientId.get('client-race');
+        assert.ok(stream);
+
+        // Fire a local mutation and a cross-pod update concurrently.
+        // Both write to stream.meta; the last write wins.
+        stream.meta.userId = 'local-mutation';
+        const updatePromise = server2.updateClientMetadata('client-race', { userId: 'remote-update' });
+
+        await updatePromise;
+        await sleepMs(200); // Let proxy microtasks settle
+
+        // The remote update arrives via mesh invoke which is async,
+        // so it executes after the synchronous local mutation.
+        // Final state should be the remote update.
+        assert.strictEqual(stream.meta.userId, 'remote-update');
+
+        // Registry should be consistent with stream.meta
+        const regClient = await server1.clientRegistry.getClient('client-race');
+        assert.ok(regClient);
+        assert.strictEqual(regClient.metadata.userId, 'remote-update');
     });
 
     it('meshStop cleans up registered clients', async () => {
