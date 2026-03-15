@@ -893,7 +893,7 @@ describe('MeshSrpcServer', () => {
         registryBackend.continueRegister();
         const close = await closeEvent;
 
-        assert.strictEqual(close.code, 4000);
+        assert.strictEqual(close.code, 4001);
         assert.match(close.reason, /conflict/);
         assert.strictEqual(handledRequests, 0);
     });
