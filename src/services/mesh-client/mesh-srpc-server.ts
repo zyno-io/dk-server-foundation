@@ -88,7 +88,7 @@ export class MeshSrpcServer<
             const stream = this.getCurrentStreamByClientId(clientId);
             if (stream) {
                 this.meshLogger.info('Disconnecting superseded client', { clientId });
-                this.cleanupStream(stream, 'duplicate');
+                this.cleanupStream(stream, 'supersede');
             }
         });
 

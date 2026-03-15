@@ -284,10 +284,18 @@ export class SrpcServer<
         this.streamsByClientId.set(stream.clientId, stream);
     }
 
-    // IMPORTANT: SrpcClient.parseDisconnectCause() matches on the close reason string
-    // to determine the disconnect cause. If you change these messages, update the client too.
+    // IMPORTANT: SrpcClient.parseDisconnectCause() matches on the close code number
+    // to determine the disconnect cause. If you change these codes, update the client too.
+    private static readonly CLOSE_CODES: Record<SrpcDisconnectCause, number> = {
+        disconnect: 1000,
+        badArg: 4000,
+        conflict: 4001,
+        supersede: 4002,
+        timeout: 4003
+    };
+
     private closeStreamWithError(stream: SrpcStream<TMeta>, cause: SrpcDisconnectCause, message: string) {
-        stream.$ws.close(cause === 'disconnect' ? 1000 : 4000, message.substring(0, 123));
+        stream.$ws.close(SrpcServer.CLOSE_CODES[cause], message.substring(0, 123));
     }
 
     ////////////////////////////////////////
@@ -375,7 +383,7 @@ export class SrpcServer<
                 clientId: stream.clientId,
                 conflictingStreamId: conflictingStream.id
             });
-            this.cleanupStream(conflictingStream, 'duplicate');
+            this.cleanupStream(conflictingStream, 'supersede');
         }
 
         // Register in local maps before the async hook so lifecycle chains

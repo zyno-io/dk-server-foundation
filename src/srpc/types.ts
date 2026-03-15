@@ -82,7 +82,7 @@ export interface SrpcMessageFns<T> {
     decode(input: BinaryReader | Uint8Array, length?: number): T;
 }
 
-export type SrpcDisconnectCause = 'disconnect' | 'duplicate' | 'conflict' | 'timeout' | 'badArg';
+export type SrpcDisconnectCause = 'disconnect' | 'conflict' | 'supersede' | 'timeout' | 'badArg';
 
 export interface IQueuedRequest {
     exp: number;

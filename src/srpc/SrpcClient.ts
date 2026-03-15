@@ -23,7 +23,7 @@ import {
 
 export class SrpcConflictError extends Error {
     constructor() {
-        super('Connection rejected: client ID already connected');
+        super('Client ID is already connected');
         this.name = 'SrpcConflictError';
     }
 }
@@ -212,33 +212,33 @@ export class SrpcClient<TClientInput extends BaseMessage = BaseMessage, TServerO
         if (ws !== this.ws) return;
         clearConnectTimeout();
 
-        const reasonStr = String(reason);
-        const cause = this.parseDisconnectCause(code, reasonStr);
+        const cause = this.parseDisconnectCause(code);
 
         if (this.intentionalDisconnect) {
             this.logger.debug('WebSocket closed by client');
         } else if (cause === 'conflict') {
-            this.logger.warn('Connection rejected: client ID already connected on server');
+            this.logger.warn('Connection rejected: client ID is already connected');
             this.connectReject?.(new SrpcConflictError());
             this.connectResolve = undefined;
             this.connectReject = undefined;
             this.handleDisconnect(cause, true);
             return;
         } else {
-            this.logger.info('Stream ended', { code, reason: reasonStr });
+            this.logger.info('Stream ended', { code, reason: String(reason) });
         }
 
         this.handleDisconnect(cause);
     }
 
-    private parseDisconnectCause(code: number, reason: string): SrpcDisconnectCause {
-        if (code === 4000) {
-            if (reason.includes('already connected') || reason.includes('cause: conflict')) return 'conflict';
-            if (reason.includes('cause: duplicate')) return 'duplicate';
-            if (reason.includes('cause: timeout')) return 'timeout';
-            return 'badArg';
-        }
-        return 'disconnect';
+    private static readonly CLOSE_CAUSES: Record<number, SrpcDisconnectCause> = {
+        4000: 'badArg',
+        4001: 'conflict',
+        4002: 'supersede',
+        4003: 'timeout'
+    };
+
+    private parseDisconnectCause(code: number): SrpcDisconnectCause {
+        return SrpcClient.CLOSE_CAUSES[code] ?? 'disconnect';
     }
 
     private handleError(ws: WebSocket, err: Error, clearConnectTimeout: () => void) {
@@ -297,7 +297,7 @@ export class SrpcClient<TClientInput extends BaseMessage = BaseMessage, TServerO
     private doPingPong() {
         if ((this.lastPongMs ?? 0) < Date.now() - 75_000) {
             this.logger.warn('Pong timeout');
-            this.ws?.close(4001, 'Pong timeout');
+            this.ws?.close(4003, 'Pong timeout');
             return;
         }
 
@@ -329,7 +329,7 @@ export class SrpcClient<TClientInput extends BaseMessage = BaseMessage, TServerO
 
         if (!requestId) {
             this.logger.warn('Protocol error: missing request ID, terminating connection');
-            this.ws?.close(4002, 'Invalid request ID');
+            this.ws?.close(4000, 'Invalid request ID');
             return;
         }
 
@@ -359,7 +359,7 @@ export class SrpcClient<TClientInput extends BaseMessage = BaseMessage, TServerO
         const queueItem = this.requestQueue.get(requestId);
         if (!queueItem) {
             this.logger.warn('Protocol error: unknown request ID for reply, terminating connection', { requestId });
-            this.ws?.close(4003, 'Unknown request ID');
+            this.ws?.close(4000, 'Unknown request ID');
             return;
         }
 

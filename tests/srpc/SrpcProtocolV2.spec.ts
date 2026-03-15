@@ -385,7 +385,7 @@ describe('SRPC Protocol V2', () => {
     });
 
     describe('disconnect cause', () => {
-        it('passes "duplicate" cause when superseded by another connection', async () => {
+        it('passes "supersede" cause when superseded by another connection', async () => {
             const key = `v2-${++keyCounter}`;
             const server = createServer(key);
             await server.meshStart();
@@ -405,7 +405,7 @@ describe('SRPC Protocol V2', () => {
             await sleepMs(100);
 
             assert.strictEqual(causes.length, 1);
-            assert.strictEqual(causes[0], 'duplicate');
+            assert.strictEqual(causes[0], 'supersede');
         });
 
         it('passes "disconnect" cause on normal disconnection', async () => {
@@ -432,7 +432,7 @@ describe('SRPC Protocol V2', () => {
             assert.strictEqual(causes[0], 'disconnect');
         });
 
-        it('passes "duplicate" cause when superseded by v1 client', async () => {
+        it('passes "supersede" cause when superseded by v1 client', async () => {
             const key = `v2-${++keyCounter}`;
             const server = createServer(key);
             await server.meshStart();
@@ -452,7 +452,7 @@ describe('SRPC Protocol V2', () => {
             await sleepMs(100);
 
             assert.strictEqual(causes.length, 1);
-            assert.strictEqual(causes[0], 'duplicate');
+            assert.strictEqual(causes[0], 'supersede');
         });
     });
 });

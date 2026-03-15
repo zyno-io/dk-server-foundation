@@ -174,7 +174,7 @@ await client.connect();
 // Or fire-and-forget (registers handlers first, connects in background)
 client.registerConnectionHandler(() => { /* connected */ });
 client.registerDisconnectHandler(cause => {
-    // cause: 'disconnect' | 'duplicate' | 'conflict' | 'timeout' | 'badArg'
+    // cause: 'disconnect' | 'supersede' | 'conflict' | 'timeout' | 'badArg'
     console.log('Disconnected:', cause);
 });
 client.connect(); // unhandled promise is fine here
@@ -232,7 +232,7 @@ The disconnect handler also receives the cause:
 
 ```typescript
 client.registerDisconnectHandler(cause => {
-    if (cause === 'duplicate') {
+    if (cause === 'supersede') {
         // Another connection superseded this one
     }
 });
@@ -270,7 +270,7 @@ receiver.on('end', () => {
 
 SRPC supports protocol versioning via the `_v` query parameter. The server default is v1 (for backwards compatibility with clients that don't send `_v`). The `SrpcClient` default is v2.
 
-**v1:** When a new connection arrives with the same client ID as an existing connection, the existing connection is automatically kicked (`duplicate` cause) and the new connection proceeds. This is the server default when `_v` is not sent (for backwards compatibility with older clients).
+**v1:** When a new connection arrives with the same client ID as an existing connection, the existing connection is automatically kicked (`supersede` cause) and the new connection proceeds. This is the server default when `_v` is not sent (for backwards compatibility with older clients).
 
 **v2 (client default):** When a collision occurs, the *new* connection is rejected with a `conflict` close and the existing connection is left undisturbed. To explicitly supersede the existing connection, call `connect({ supersede: true })`.
 
@@ -285,13 +285,13 @@ const client = new SrpcClient(logger, url, ClientMessage, ServerMessage, 'my-id'
 ## Disconnect Causes
 
 ```typescript
-type SrpcDisconnectCause = 'disconnect' | 'duplicate' | 'conflict' | 'timeout' | 'badArg';
+type SrpcDisconnectCause = 'disconnect' | 'supersede' | 'conflict' | 'timeout' | 'badArg';
 ```
 
 | Cause        | Description                                                      |
 | ------------ | ---------------------------------------------------------------- |
 | `disconnect` | Normal disconnection                                             |
-| `duplicate`  | Another connection superseded this one (same client ID)          |
+| `supersede`  | Another connection superseded this one (same client ID)          |
 | `conflict`   | Connection rejected because client ID is already connected (v2)  |
 | `timeout`    | Heartbeat timeout                                                |
 | `badArg`     | Invalid connection arguments                                     |
