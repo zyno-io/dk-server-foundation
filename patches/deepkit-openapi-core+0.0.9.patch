@@ -20,6 +20,22 @@ index 9b44c68..00f1483 100644
              if (c && typeof c === "object") {
                  if (c.__type === "schema" && c.__registryKey && !c.__isComponent) {
                      const ret = {
+diff --git a/node_modules/deepkit-openapi-core/dist/cjs/src/ParametersResolver.js b/node_modules/deepkit-openapi-core/dist/cjs/src/ParametersResolver.js
+index f0c86a4..dc544a7 100644
+--- a/node_modules/deepkit-openapi-core/dist/cjs/src/ParametersResolver.js
++++ b/node_modules/deepkit-openapi-core/dist/cjs/src/ParametersResolver.js
+@@ -73,8 +73,9 @@ class ParametersResolver {
+             else if (parameter.body || parameter.bodyValidation) {
+                 if (type.kind !== type_1.ReflectionKind.array &&
+                     type.kind !== type_1.ReflectionKind.class &&
+-                    type.kind !== type_1.ReflectionKind.objectLiteral) {
+-                    throw new errors_1.DeepKitOpenApiError("HttpBody or HttpBodyValidation should be either array, class, or object literal.");
++                    type.kind !== type_1.ReflectionKind.objectLiteral &&
++                    type.kind !== type_1.ReflectionKind.union) {
++                    throw new errors_1.DeepKitOpenApiError("HttpBody or HttpBodyValidation should be either array, class, object literal, or union.");
+                 }
+                 const bodySchema = (0, TypeSchemaResolver_1.resolveTypeSchema)(type, this.schemeRegistry);
+                 this.errors.push(...bodySchema.errors);
 diff --git a/node_modules/deepkit-openapi-core/dist/cjs/src/SchemaRegistry.js b/node_modules/deepkit-openapi-core/dist/cjs/src/SchemaRegistry.js
 index 6a46ed3..15f1e9a 100644
 --- a/node_modules/deepkit-openapi-core/dist/cjs/src/SchemaRegistry.js
@@ -60,3 +76,21 @@ index f6324ac..53ac6fd 100644
 +export declare const mapSimpleLiteralToType: (literal: any) => "string" | "number" | "boolean" | "integer" | undefined;
  export declare const unwrapTypeSchema: (t: Type, r?: SchemaRegistry) => Schema;
  export declare const resolveTypeSchema: (t: Type, r?: SchemaRegistry) => TypeSchemaResolver;
+diff --git a/node_modules/deepkit-openapi-core/src/ParametersResolver.ts b/node_modules/deepkit-openapi-core/src/ParametersResolver.ts
+index 3c6319b..8377360 100644
+--- a/node_modules/deepkit-openapi-core/src/ParametersResolver.ts
++++ b/node_modules/deepkit-openapi-core/src/ParametersResolver.ts
+@@ -79,10 +79,11 @@ export class ParametersResolver {
+         if (
+           type.kind !== ReflectionKind.array &&
+           type.kind !== ReflectionKind.class &&
+-          type.kind !== ReflectionKind.objectLiteral
++          type.kind !== ReflectionKind.objectLiteral &&
++          type.kind !== ReflectionKind.union
+         ) {
+           throw new DeepKitOpenApiError(
+-            "HttpBody or HttpBodyValidation should be either array, class, or object literal."
++            "HttpBody or HttpBodyValidation should be either array, class, object literal, or union."
+           );
+         }
+ 
