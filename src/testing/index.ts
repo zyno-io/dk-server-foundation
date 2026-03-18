@@ -4,6 +4,7 @@ import { ApplicationServer, TestingFacade as BaseTestingFacade } from '@deepkit/
 import { MySQLDatabaseAdapter } from '@deepkit/mysql';
 import { DatabaseRegistry } from '@deepkit/orm';
 import { PostgresDatabaseAdapter } from '@deepkit/postgres';
+import { SQLDatabaseAdapter } from '@deepkit/sql';
 
 import { BaseAppConfig, createApp, CreateAppOptions } from '../app';
 import { globalState } from '../app/state';
@@ -31,6 +32,7 @@ export interface ITestingFacadeOptions {
     enableDatabase?: boolean;
     enableMigrations?: boolean;
     autoSeedData?: boolean;
+    useSavepoints?: boolean;
     databasePrefix?: string;
     dbAdapter?: TestDbAdapter;
     onBeforeStart?: (facade: TestingFacade) => Promise<void>;
@@ -46,8 +48,12 @@ export class TestingFacade<A extends RootModuleDefinition = RootModuleDefinition
     public startTs = 0;
     public databaseName?: string;
     public dbAdapter: TestDbAdapter;
+    public savepointIsolationActive = false;
     private stopped = false;
     private httpServer?: import('net').Server;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    private savepointConnection?: any;
+    private savepointCleanup?: () => void;
 
     constructor(
         app: App<A>,
@@ -55,6 +61,11 @@ export class TestingFacade<A extends RootModuleDefinition = RootModuleDefinition
     ) {
         super(app);
         this.dbAdapter = options.dbAdapter ?? getTestDbAdapter();
+    }
+
+    private get shouldUseSavepoints(): boolean {
+        if (this.options?.useSavepoints !== undefined) return this.options.useSavepoints;
+        return !!this.options?.enableDatabase;
     }
 
     public async start() {
@@ -99,7 +110,8 @@ export class TestingFacade<A extends RootModuleDefinition = RootModuleDefinition
                     await this.runMigrations();
                     await this.truncateTables();
                 }
-                if (this.options?.autoSeedData) {
+
+                if (!this.shouldUseSavepoints && this.options?.autoSeedData) {
                     await this.options?.seedData?.(this);
                 }
             }
@@ -114,6 +126,10 @@ export class TestingFacade<A extends RootModuleDefinition = RootModuleDefinition
         this.stopped = true;
 
         await this.options?.onBeforeStop?.(this);
+
+        if (this.savepointIsolationActive) {
+            await this.teardownSavepointIsolation();
+        }
 
         // if the server is running for too short of a time, the database handshake
         // gets interrupted and the client hangs due to poor behaivor. thus,
@@ -260,8 +276,123 @@ export class TestingFacade<A extends RootModuleDefinition = RootModuleDefinition
 
     public async resetToSeed() {
         if (!this.options?.enableDatabase) return;
+
+        if (this.shouldUseSavepoints) {
+            if (!this.savepointIsolationActive) {
+                // Lazily initialize savepoint isolation on first resetToSeed call.
+                // This ensures tables exist (e.g. createTables() called after start()).
+                await this.initSavepointIsolation();
+            } else {
+                await this.savepointConnection.run('ROLLBACK TO SAVEPOINT after_seed');
+            }
+            return;
+        }
+
         await this.truncateTables();
         await this.options?.seedData?.(this);
+    }
+
+    /**
+     * Savepoint isolation: instead of truncating all tables and re-seeding between
+     * tests, we wrap all test activity in a transaction and use SAVEPOINT/ROLLBACK TO
+     * to restore the database to its post-seed state. This is dramatically faster than
+     * TRUNCATE on large schemas.
+     *
+     * How it works:
+     * 1. Seed data is loaded within a transaction on a dedicated connection
+     * 2. A savepoint (after_seed) captures the post-seed state
+     * 3. The connection pool is hijacked so all queries use this connection
+     * 4. App-level transactions (db.transaction()) become nested savepoints
+     * 5. Between tests, ROLLBACK TO SAVEPOINT restores the seed state instantly
+     */
+    private async initSavepointIsolation() {
+        const databases = this.app.get(DatabaseRegistry).getDatabases();
+        if (databases.length === 0) return;
+
+        const db = databases[0];
+        const adapter = db.adapter as SQLDatabaseAdapter;
+        const pool = adapter.connectionPool;
+
+        // Get a connection and start a wrapping transaction
+        const conn = await pool.getConnection();
+        this.savepointConnection = conn;
+
+        await conn.run('START TRANSACTION');
+
+        // Seed data within the transaction
+        if (this.options?.seedData) {
+            await this.options.seedData(this);
+        }
+
+        // Create the savepoint we'll rollback to between tests
+        await conn.run('SAVEPOINT after_seed');
+
+        // Store originals for cleanup
+        const origGetConnection = pool.getConnection.bind(pool);
+        const origRelease = conn.release.bind(conn);
+
+        let spCounter = 0;
+
+        // Hijack getConnection to always return our held connection.
+        // Transaction begin/commit/rollback are patched per-instance (not on the
+        // prototype) so that multiple facades can coexist safely.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        pool.getConnection = async (transaction?: any) => {
+            if (transaction) {
+                if (transaction.connection) return transaction.connection;
+                transaction.connection = conn;
+
+                // Patch this transaction instance to use savepoints
+                const spName = `sp_${++spCounter}`;
+                transaction.begin = async function () {
+                    if (!this.connection) return;
+                    await this.connection.run(`SAVEPOINT ${spName}`);
+                };
+                transaction.commit = async function () {
+                    if (!this.connection) return;
+                    if (this.ended) throw new Error('Transaction ended already');
+                    await this.connection.run(`RELEASE SAVEPOINT ${spName}`);
+                    this.ended = true;
+                };
+                transaction.rollback = async function () {
+                    if (!this.connection) return;
+                    if (this.ended) throw new Error('Transaction ended already');
+                    await this.connection.run(`ROLLBACK TO SAVEPOINT ${spName}`);
+                    this.ended = true;
+                };
+
+                try {
+                    await transaction.begin();
+                } catch (error) {
+                    transaction.ended = true;
+                    throw new Error('Could not start transaction: ' + error);
+                }
+            }
+            return conn;
+        };
+
+        // Make release a no-op so the connection stays held
+        conn.release = () => {};
+
+        this.savepointIsolationActive = true;
+        this.savepointCleanup = () => {
+            pool.getConnection = origGetConnection;
+            conn.release = origRelease;
+        };
+    }
+
+    private async teardownSavepointIsolation() {
+        if (!this.savepointIsolationActive) return;
+
+        this.savepointCleanup!();
+        try {
+            await this.savepointConnection.run('ROLLBACK');
+        } catch {
+            // connection may already be broken
+        }
+        this.savepointIsolationActive = false;
+        this.savepointConnection = undefined;
+        this.savepointCleanup = undefined;
     }
 }
 
