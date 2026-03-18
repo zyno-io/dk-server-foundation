@@ -109,6 +109,8 @@ export class HttpCorsListener {
         if (!originHeader) return null;
         if (!request.url) return null;
 
+        const urlPath = request.url.split('?')[0];
+
         return this.descriptors.find(descriptor => {
             const hostMatches = descriptor.options.hosts.some(host => {
                 if (host === '*') {
@@ -124,9 +126,9 @@ export class HttpCorsListener {
                 !descriptor.options.paths ||
                 descriptor.options.paths.some(path => {
                     if (path instanceof RegExp) {
-                        return path.test(request.url!);
+                        return path.test(urlPath);
                     }
-                    return request.url!.startsWith(path);
+                    return urlPath.startsWith(path);
                 });
 
             return hostMatches && patchMatches;
