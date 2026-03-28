@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 
-import { execSync } from 'child_process';
-import { existsSync, mkdirSync, readdirSync, statSync } from 'fs';
-import { basename, dirname, join, resolve } from 'path';
+/* eslint-disable @typescript-eslint/no-require-imports */
+const { execSync } = require('child_process') as typeof import('child_process');
+const { existsSync, mkdirSync, readdirSync, statSync } = require('fs') as typeof import('fs');
+const { basename, dirname, join, resolve } = require('path') as typeof import('path');
 
 const args = process.argv.slice(2);
 
