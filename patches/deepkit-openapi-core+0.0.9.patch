@@ -76,6 +76,34 @@ index f6324ac..53ac6fd 100644
 +export declare const mapSimpleLiteralToType: (literal: any) => "string" | "number" | "boolean" | "integer" | undefined;
  export declare const unwrapTypeSchema: (t: Type, r?: SchemaRegistry) => Schema;
  export declare const resolveTypeSchema: (t: Type, r?: SchemaRegistry) => TypeSchemaResolver;
+diff --git a/node_modules/deepkit-openapi-core/dist/cjs/src/TypeSchemaResolver.js b/node_modules/deepkit-openapi-core/dist/cjs/src/TypeSchemaResolver.js
+index 1234567..abcdefg 100644
+--- a/node_modules/deepkit-openapi-core/dist/cjs/src/TypeSchemaResolver.js
++++ b/node_modules/deepkit-openapi-core/dist/cjs/src/TypeSchemaResolver.js
+@@ -126,6 +126,11 @@ class TypeSchemaResolver {
+                     this.result.properties[String(typeItem.name)] = typeResolver.result;
+                     this.errors.push(...typeResolver.errors);
+                 }
++                else if (typeItem.kind === type_1.ReflectionKind.indexSignature) {
++                    const valueResolver = (0, exports.resolveTypeSchema)(typeItem.type, this.schemaRegisty);
++                    this.result.additionalProperties = valueResolver.result;
++                    this.errors.push(...valueResolver.errors);
++                }
+             }
+         }
+         if (required.length) {
+diff --git a/node_modules/deepkit-openapi-core/dist/cjs/src/types.d.ts b/node_modules/deepkit-openapi-core/dist/cjs/src/types.d.ts
+index 1234567..abcdefg 100644
+--- a/node_modules/deepkit-openapi-core/dist/cjs/src/types.d.ts
++++ b/node_modules/deepkit-openapi-core/dist/cjs/src/types.d.ts
+@@ -24,6 +24,7 @@ export type Schema = {
+     items?: Schema;
+     default?: any;
+     oneOf?: Schema[];
++    additionalProperties?: Schema | boolean;
+     $ref?: string;
+ };
+ export declare const AnySchema: Schema;
 diff --git a/node_modules/deepkit-openapi-core/src/ParametersResolver.ts b/node_modules/deepkit-openapi-core/src/ParametersResolver.ts
 index 3c6319b..8377360 100644
 --- a/node_modules/deepkit-openapi-core/src/ParametersResolver.ts
@@ -93,4 +121,34 @@ index 3c6319b..8377360 100644
 +            "HttpBody or HttpBodyValidation should be either array, class, object literal, or union."
            );
          }
- 
+
+diff --git a/node_modules/deepkit-openapi-core/src/TypeSchemaResolver.ts b/node_modules/deepkit-openapi-core/src/TypeSchemaResolver.ts
+index 1234567..abcdefg 100644
+--- a/node_modules/deepkit-openapi-core/src/TypeSchemaResolver.ts
++++ b/node_modules/deepkit-openapi-core/src/TypeSchemaResolver.ts
+@@ -157,6 +157,13 @@ export class TypeSchemaResolver {
+
+           this.result.properties[String(typeItem.name)] = typeResolver.result;
+           this.errors.push(...typeResolver.errors);
++        } else if (typeItem.kind === ReflectionKind.indexSignature) {
++          const valueResolver = resolveTypeSchema(
++            typeItem.type,
++            this.schemaRegisty,
++          );
++          this.result.additionalProperties = valueResolver.result;
++          this.errors.push(...valueResolver.errors);
+         }
+       }
+     }
+diff --git a/node_modules/deepkit-openapi-core/src/types.ts b/node_modules/deepkit-openapi-core/src/types.ts
+index 1234567..abcdefg 100644
+--- a/node_modules/deepkit-openapi-core/src/types.ts
++++ b/node_modules/deepkit-openapi-core/src/types.ts
+@@ -27,6 +27,7 @@ export type Schema = {
+   items?: Schema;
+   default?: any;
+   oneOf?: Schema[];
++  additionalProperties?: Schema | boolean;
+
+   $ref?: string;
+ };
