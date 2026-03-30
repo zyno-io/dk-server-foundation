@@ -332,7 +332,7 @@ function resolveColumnType(type: Type, columnName: string, dialect: Dialect, par
     }
 
     // Primitive type map
-    return resolvePrimitiveType(type, dialect);
+    return resolvePrimitiveType(type, dialect, columnName);
 }
 
 function resolveIntersectionType(type: TypeIntersection, columnName: string, dialect: Dialect, parentTableName?: string): ResolvedType | null {
@@ -461,13 +461,20 @@ function getMaxLength(type: Type): number | undefined {
     return undefined;
 }
 
-function resolvePrimitiveType(type: Type, dialect: Dialect): ResolvedType | null {
+function isIdColumn(columnName: string): boolean {
+    return columnName === 'id' || columnName.endsWith('Id') || columnName.endsWith('_id');
+}
+
+function resolvePrimitiveType(type: Type, dialect: Dialect, columnName?: string): ResolvedType | null {
     switch (type.kind) {
         case ReflectionKind.string:
             return { type: 'varchar', size: 255 };
 
         case ReflectionKind.number:
-            return dialect === 'mysql' ? { type: 'double' } : { type: 'double precision' };
+            if (dialect === 'mysql' && columnName && isIdColumn(columnName)) {
+                return { type: 'int', unsigned: true };
+            }
+            return { type: 'int' };
 
         case ReflectionKind.boolean:
             return dialect === 'mysql' ? { type: 'tinyint', size: 1 } : { type: 'boolean' };
