@@ -94,8 +94,12 @@ export class SrpcServer<
         // can coexist on the same HTTP server without aborting each other's
         // upgrade requests (the default `{ server, path }` mode aborts
         // non-matching upgrades, breaking other ws servers on the same port).
-        const app = r(ApplicationServer);
-        this.httpServer = app.getHttpWorker()['server']!;
+        if (options.httpServer) {
+            this.httpServer = options.httpServer as import('http').Server;
+        } else {
+            const app = r(ApplicationServer);
+            this.httpServer = app.getHttpWorker()['server']!;
+        }
         this.wsServer = new WebSocket.Server({ noServer: true });
         this.wsServer.on('connection', this.attachConnection.bind(this));
 

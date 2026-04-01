@@ -114,6 +114,8 @@ export interface ISrpcServerOptions<TClientOutput extends BaseMessage, TServerOu
     debug?: boolean;
     /** Controls SRPC log output. 'info' (default) logs normally, 'debug' downgrades to debug level, false suppresses all logs. */
     logLevel?: 'info' | 'debug' | false;
+    /** External HTTP/HTTPS server to attach WebSocket upgrade handler to. If not provided, uses the Deepkit ApplicationServer's HTTP server. */
+    httpServer?: import('http').Server;
 }
 
 export interface SrpcStream<T = SrpcMeta> extends IByteStreamable {
