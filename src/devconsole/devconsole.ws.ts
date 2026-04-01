@@ -120,12 +120,12 @@ export class DevConsoleSrpcServer {
         // Environment
         s.registerMessageHandler('uGetEnv', async () => {
             const config = getAppConfig();
-            return { jsonData: JSON.stringify(maskSecrets(config as unknown as Record<string, unknown>)) };
+            return { jsonData: safeJsonStringify(maskSecrets(config as unknown as Record<string, unknown>)) };
         });
 
         // HTTP Requests
         s.registerMessageHandler('uGetRequests', async () => {
-            return { jsonData: JSON.stringify(this.store.httpEntries.toArray().reverse()) };
+            return { jsonData: safeJsonStringify(this.store.httpEntries.toArray().reverse()) };
         });
 
         // Routes
@@ -146,7 +146,7 @@ export class DevConsoleSrpcServer {
         // sRPC connections
         s.registerMessageHandler('uGetSrpc', async () => {
             return {
-                jsonData: JSON.stringify({
+                jsonData: safeJsonStringify({
                     active: Array.from(this.store.srpcConnections.values()),
                     recentDisconnections: this.store.srpcDisconnected.toArray().reverse()
                 })
@@ -159,7 +159,7 @@ export class DevConsoleSrpcServer {
             if (data.streamId) {
                 messages = messages.filter(m => m.streamId === data.streamId);
             }
-            return { jsonData: JSON.stringify(messages.reverse()) };
+            return { jsonData: safeJsonStringify(messages.reverse()) };
         });
 
         // Workers
@@ -172,7 +172,7 @@ export class DevConsoleSrpcServer {
                     result[name] = { error: 'Failed to fetch job counts' };
                 }
             }
-            return { jsonData: JSON.stringify(result) };
+            return { jsonData: safeJsonStringify(result) };
         });
 
         // Workers jobs
@@ -253,7 +253,7 @@ export class DevConsoleSrpcServer {
                 // _jobs table may not exist if recorder hasn't run
             }
 
-            return { jsonData: JSON.stringify({ live, history }) };
+            return { jsonData: safeJsonStringify({ live, history }) };
         });
 
         // Database entities
@@ -312,15 +312,15 @@ export class DevConsoleSrpcServer {
             try {
                 const hcSvc = this.app.get(HealthcheckService);
                 const results = await hcSvc.checkIndividual();
-                return { jsonData: JSON.stringify(results) };
+                return { jsonData: safeJsonStringify(results) };
             } catch {
-                return { jsonData: JSON.stringify([]) };
+                return { jsonData: safeJsonStringify([]) };
             }
         });
 
         // Database Log
         s.registerMessageHandler('uGetDatabaseQueries', async () => {
-            return { jsonData: JSON.stringify(this.store.dbQueries.toArray().reverse()) };
+            return { jsonData: safeJsonStringify(this.store.dbQueries.toArray().reverse()) };
         });
         s.registerMessageHandler('uClearDatabaseQueries', async () => {
             this.store.clearDatabaseQueries();
@@ -343,7 +343,7 @@ export class DevConsoleSrpcServer {
         // Mutexes
         s.registerMessageHandler('uGetMutexes', async () => {
             return {
-                jsonData: JSON.stringify({
+                jsonData: safeJsonStringify({
                     active: Array.from(this.store.activeMutexes.values()),
                     history: this.store.mutexEntries.toArray().reverse()
                 })
@@ -371,7 +371,7 @@ export class DevConsoleSrpcServer {
 
         try {
             // eslint-disable-next-line @typescript-eslint/no-implied-eval, no-new-func
-            const fn = new Function('console', `return eval(${JSON.stringify(code)})`);
+            const fn = new Function('console', `return eval(${safeJsonStringify(code)})`);
             let result = fn(localConsole);
             if (result && typeof result === 'object' && typeof result.then === 'function') {
                 result = await result;

@@ -2,6 +2,7 @@
 import type { App } from '@deepkit/app';
 import type { HttpRequest, HttpResponse } from '@deepkit/http';
 
+import { safeJsonStringify } from '../helpers/data/serialization';
 import { uuid7 } from '../helpers/utils/uuid';
 import { createLogger } from '../services';
 import { DevConsoleController } from './devconsole.controller';
@@ -530,7 +531,13 @@ export function serializeError(err: unknown): DevConsoleErrorInfo {
 
     for (const key of Object.keys(err)) {
         if (SKIP_KEYS.has(key)) continue;
-        info[key] = (err as any)[key];
+        const val = (err as any)[key];
+        try {
+            safeJsonStringify(val);
+            info[key] = val;
+        } catch {
+            info[key] = `[non-serializable ${typeof val}]`;
+        }
     }
 
     const cause = (err as any).cause;
