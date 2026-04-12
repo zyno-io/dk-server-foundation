@@ -6,13 +6,9 @@ import WebSocket from 'ws';
 
 import type { IByteStreamable } from './SrpcByteStream';
 
-export type RequestKeys<T> = {
-    [K in keyof T]: K extends `${infer _X}Request` ? K : never;
-}[keyof T];
+export type RequestKeys<T> = keyof T & `${string}Request`;
 
-export type ResponseKeys<T> = {
-    [K in keyof T]: K extends `${infer _X}Response` ? K : never;
-}[keyof T];
+export type ResponseKeys<T> = keyof T & `${string}Response`;
 
 /**
  * Extract prefix from Request keys (e.g., 'uEcho' from 'uEchoRequest')
@@ -28,9 +24,10 @@ export type ResponsePrefix<K> = K extends `${infer P}Response` ? P : never;
  * Get all valid invoke prefixes where TReq has `${P}Request` and TRes has `${P}Response`.
  * Excludes string index signatures to prevent overly permissive typing.
  */
-export type InvokePrefixes<TReq, TRes> = {
-    [K in keyof TReq]: K extends string ? (K extends `${infer P}Request` ? (`${P}Response` extends keyof TRes ? P : never) : never) : never;
-}[keyof TReq];
+/** Extract the prefix P from `${P}Request` keys of TReq where `${P}Response` exists in TRes. */
+type _ExtractPrefix<K, TRes> = K extends `${infer P}Request` ? (`${P}Response` extends keyof TRes ? P : never) : never;
+
+export type InvokePrefixes<TReq, TRes> = _ExtractPrefix<keyof TReq, TRes>;
 
 /**
  * Get the request data type for a given prefix (for sending requests).

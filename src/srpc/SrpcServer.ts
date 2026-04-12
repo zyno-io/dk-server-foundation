@@ -554,12 +554,12 @@ export class SrpcServer<
             return queueItem.resolve(data);
         }
 
-        this.handleClientRequest(stream, requestId, data).then(
-            response => {
+        this.handleClientRequest(stream, requestId, data)
+            .then(response => {
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 this.writeToStream(stream, { requestId, reply: true, ...response } as any);
-            },
-            err => {
+            })
+            .catch(err => {
                 this.logger.warn('Error processing client request', err, { srpc: { streamId, clientId, requestId } });
                 const isUserError = err instanceof SrpcError && err.isUserError;
                 this.writeToStream(stream, {
@@ -568,8 +568,7 @@ export class SrpcServer<
                     error: isUserError ? err.message : String(err),
                     userError: isUserError
                 } as TServerOutput);
-            }
-        );
+            });
     }
 
     private handleByteSubstreamOperation(stream: SrpcStream<TMeta>, op: NonNullable<TClientOutput['byteStreamOperation']>): void {

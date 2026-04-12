@@ -1,6 +1,6 @@
 import type { PrometheusExporter } from '@opentelemetry/exporter-prometheus';
 
-import { Attributes, ROOT_CONTEXT, Span, SpanKind, SpanStatusCode, trace, Tracer } from '@opentelemetry/api';
+import { Attributes, Link, ROOT_CONTEXT, Span, SpanKind, SpanStatusCode, trace, Tracer } from '@opentelemetry/api';
 import { isNativeError } from 'util/types';
 
 export const OtelState = {
@@ -110,6 +110,21 @@ export function withRootSpan<T>(name: string, attrsOrFn: Attributes | (() => T) 
 
     if (!OtelState.tracer) return resolvedFn();
     return OtelState.tracer.startActiveSpan(name, { attributes: resolvedAttrs }, ROOT_CONTEXT, span => runInSpan(span, resolvedFn));
+}
+
+/**
+ * Start a root span with one or more span links — used to express "this trace is
+ * caused by / related to that other trace" without chaining them as parent/child.
+ */
+export type SpanLinkRef = { traceId: string; spanId: string; attributes?: Attributes };
+
+export function withLinkedRootSpan<T>(name: string, links: SpanLinkRef[], attrs: Attributes | undefined, fn: () => Promise<T>): Promise<T> {
+    if (!OtelState.tracer) return fn();
+    const otelLinks: Link[] = links.map(l => ({
+        context: { traceId: l.traceId, spanId: l.spanId, traceFlags: 1, isRemote: true },
+        attributes: l.attributes
+    }));
+    return OtelState.tracer.startActiveSpan(name, { attributes: attrs, links: otelLinks }, ROOT_CONTEXT, span => runInSpan(span, fn));
 }
 
 export function setSpanAttributes(attributes: Attributes) {
