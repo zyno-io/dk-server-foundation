@@ -22,6 +22,8 @@ export interface ColumnSchema {
     isIdentity?: boolean; // PG only: true if GENERATED ... AS IDENTITY (vs sequence-backed serial)
     sequenceName?: string; // PG only: actual sequence name from pg_get_serial_sequence()
     ordinalPosition: number; // 1-based column order
+    /** MySQL only — positioning hint for ALTER TABLE ADD COLUMN. `null` = FIRST, string = AFTER <col>, undefined = no clause. */
+    afterColumn?: string | null;
 }
 
 export interface IndexSchema {

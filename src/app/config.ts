@@ -7,6 +7,8 @@ export class BaseAppConfig {
 
     PORT?: number;
 
+    DB_ADAPTER?: 'mysql' | 'postgres';
+
     MYSQL_HOST?: string;
     MYSQL_PORT?: number;
     MYSQL_USER?: string;

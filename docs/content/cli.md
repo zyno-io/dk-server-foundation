@@ -68,6 +68,9 @@ node app.js migration:create
 
 # Non-interactive (CI-safe)
 node app.js migration:create --non-interactive
+
+# Emit dialect-specific raw SQL instead of dialect-portable schema-builder calls
+node app.js migration:create --raw
 ```
 
 Behavior:
@@ -76,7 +79,7 @@ Behavior:
 2. Introspects the live database schema via `information_schema`
 3. Compares the two and detects added/removed/modified tables, columns, indexes, foreign keys, primary key changes, and PostgreSQL enum types
 4. In interactive mode, prompts to detect column renames (avoiding data loss from drop+add)
-5. Generates dialect-specific DDL (MySQL or PostgreSQL)
+5. **By default, emits dialect-portable `db.schema.create/alter` calls** so the generated migration runs on either MySQL or PostgreSQL. Pass `--raw` to fall back to the legacy dialect-specific SQL emitter.
 6. Writes a timestamped migration file using `createMigration()` format
 
 **Non-interactive mode**: Column renames cannot be detected without user input. Ambiguous changes (columns simultaneously added and removed on the same table) are treated as separate DROP/ADD operations, which may cause data loss. A warning is printed when this occurs.

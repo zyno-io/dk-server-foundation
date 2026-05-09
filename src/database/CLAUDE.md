@@ -166,6 +166,45 @@ class MyDatabase extends createPostgresDatabase(
 // - PG_CONNECTION_LIMIT, PG_IDLE_TIMEOUT_SECONDS
 ```
 
+### Multi-Dialect Schema Builder: `db.schema`
+
+Located in `src/database/schema/`. A Laravel-style fluent schema builder that emits dialect-appropriate SQL at runtime so a single migration file can target both MySQL and PostgreSQL.
+
+**Architecture:**
+
+- `Grammar` (abstract) + `MySQLGrammar` / `PostgresGrammar` — render canonical `ColumnSchema` / `IndexSchema` / `ForeignKeySchema` / `TableSchema` (from `migration/create/schema-model.ts`) into dialect-specific SQL. They own the *only* place SQL is emitted.
+- `Blueprint` — per-table collector. Each `t.string(...)`, `t.foreign(...)`, etc. records intent against the canonical model. Knows the dialect via the Grammar to translate logical types like `t.boolean()`, `t.dateTime()`, `t.jsonb()`, `t.uuid()` to the right canonical type per dialect.
+- `ColumnDefinition` / `ForeignKeyBuilder` — fluent modifiers (`.nullable()`, `.references()`, etc.).
+- `Schema` — the `db.schema` entry point. Owns the per-migration FK deferral queue and PG enum-type dedup registry. Auto-flushed by the migration runner.
+
+**Statement ordering** within a migration: PG enum types (deduped) → `CREATE TABLE` → `CREATE INDEX` per table → `ALTER TABLE ADD CONSTRAINT FOREIGN KEY` (deferred until `flush()`). Matches the ordering of the existing `migration/create/ddl-generator.ts` for backwards compatibility.
+
+**Wiring:** `BaseDatabase.schema` is a lazy getter that picks the Grammar from `getDialect(adapter)` and reads `PG_SCHEMA` from app config. Uses `require()` instead of top-level import to break the `Schema → BaseDatabase` cycle.
+
+**`migration:reset` is built on this builder.** `MigrationResetCommand` reads entity schema, then uses `builder-regenerator.ts` to emit a builder-based migration source file (rather than raw SQL). The regenerator is the inverse of the Blueprint — `TableSchema` → fluent builder source.
+
+**`migration:create` defaults to builder output too.** Same regenerator, but consuming `SchemaDiff` via `generateBuilderMigrationFromDiff(diff)`. The legacy `--raw` flag falls back to the SQL emitter (`ddl-generator.ts`) for one-off scripts. Both code paths now share the same Grammar — `ddl-generator.ts` delegates every emit (`createTable`, `createIndex`, `addForeignKey`, `createEnumType`, `mysqlColumnDef`, `pgColumnDef`, `q`/`qTable`/`qType`) to MySQLGrammar/PostgresGrammar via thin wrappers.
+
+**Schema introspection** (`db.schema.hasTable / hasColumn / hasIndex`) lets migrations be idempotent. Implementation queries `information_schema` (MySQL) or `pg_indexes` (PG). See `Schema.ts`.
+
+### Dialect-Agnostic Factory: `createDatabase()`
+
+`createDatabase()` (factory.ts) wraps the two dialect-specific factories so the dialect can be chosen via the `DB_ADAPTER` env var (or passed explicitly). Useful when the same image needs to target either backend.
+
+```typescript
+import { createDatabase } from './database';
+
+// Shared form — reads DB_ADAPTER ('mysql' | 'postgres') from process.env at call time.
+// Only `enableLocksTable` is accepted; pool tuning happens via MYSQL_* / PG_* env vars.
+class AppDB extends createDatabase({ enableLocksTable: true }, [User, Post]) {}
+
+// Explicit form — keeps each dialect's pool config typed.
+class AppDB extends createDatabase('mysql', { connectionLimit: 20 }, [User]) {}
+class AppDB extends createDatabase('postgres', { max: 20 }, [User]) {}
+```
+
+The shared form throws at call time if `DB_ADAPTER` is not set to `'mysql'` or `'postgres'`. It reads `process.env` directly (not `getAppConfig()`) because the database class must be defined at module load, before the app config is loaded — same pattern as `getTestDbAdapter()` in `src/testing/index.ts`. Both forms delegate to the existing `createMySQLDatabase` / `createPostgresDatabase`.
+
 ## Entity Management (entity.ts)
 
 ### Type-Safe Entity Creation

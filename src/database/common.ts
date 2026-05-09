@@ -32,6 +32,34 @@ DatabaseSession.prototype.addPostCommitHook = function (hook: () => Promise<void
     this[PostCommitHooksSymbol]!.push(hook);
 };
 
+type LocksAdapterState = SQLDatabaseAdapter & { _enableLocksTable?: boolean; _locksTableInit?: Promise<void> };
+
+async function ensureMysqlLocksTable(adapter: SQLDatabaseAdapter): Promise<void> {
+    const a = adapter as LocksAdapterState;
+    if (!a._enableLocksTable) return; // creator opted out
+    if (a._locksTableInit) {
+        await a._locksTableInit;
+        return;
+    }
+    a._locksTableInit = (async () => {
+        const conn = await adapter.connectionPool.getConnection();
+        try {
+            await conn.run(
+                `CREATE TABLE IF NOT EXISTS \`_locks\` (
+                    \`key\` VARCHAR(255) NOT NULL PRIMARY KEY,
+                    \`createdAt\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    \`lastTouched\` DATETIME
+                )`,
+                []
+            );
+            await conn.run(`DELETE FROM _locks WHERE lastTouched < NOW() - INTERVAL 1 HOUR`, []);
+        } finally {
+            conn.release();
+        }
+    })();
+    await a._locksTableInit;
+}
+
 DatabaseSession.prototype.acquireSessionLock = async function (key: MutexKey | MutexKey[]) {
     const flattenedKey = flattenMutexKey(key);
     const adapter = this.adapter as SQLDatabaseAdapter;
@@ -46,6 +74,10 @@ DatabaseSession.prototype.acquireSessionLock = async function (key: MutexKey | M
         // the idea here is to create a new row outside the transaction so that a primary key index lock isn't obtained
         // then we can use an in-transaction row level update so that a row-level lock is acquired
         // this will be automatically released when the transaction is committed or rolled back
+
+        // Lazy-initialize the _locks table on first use (gated by createMySQLDatabase's enableLocksTable flag).
+        // This avoids a constructor-time fire-and-forget that would race with pool teardown for fast CLIs.
+        await ensureMysqlLocksTable(adapter);
 
         // insert the lock row outside the transaction on a separate connection
         const insertConn = await adapter.connectionPool.getConnection();
@@ -83,6 +115,25 @@ export class BaseDatabase<A extends DatabaseAdapter = DatabaseAdapter> extends D
 
     // override existing definition
     declare query: <T extends OrmEntity>(type?: QueryClassType<T>, txn?: DatabaseSession<DatabaseAdapter>) => SQLDatabaseQuery<T>;
+
+    private _schema?: import('./schema').Schema;
+
+    /** Multi-dialect schema builder. See src/database/schema/. */
+    get schema(): import('./schema').Schema {
+        if (!this._schema) {
+            // eslint-disable-next-line @typescript-eslint/no-require-imports
+            const { Schema, MySQLGrammar, PostgresGrammar } = require('./schema') as typeof import('./schema');
+            // eslint-disable-next-line @typescript-eslint/no-require-imports
+            const { getDialect } = require('./dialect') as typeof import('./dialect');
+            // eslint-disable-next-line @typescript-eslint/no-require-imports
+            const { getAppConfig } = require('../app/resolver') as typeof import('../app/resolver');
+            const dialect = getDialect(this.adapter as unknown as import('@deepkit/sql').SQLDatabaseAdapter);
+            const pgSchema = dialect === 'postgres' ? (getAppConfig().PG_SCHEMA ?? 'public') : 'public';
+            const grammar = dialect === 'postgres' ? new PostgresGrammar(pgSchema) : new MySQLGrammar(pgSchema);
+            this._schema = new Schema(this, grammar);
+        }
+        return this._schema;
+    }
 
     async transaction<T>(callback: (session: DatabaseSession<A>) => Promise<T>): Promise<T> {
         let session_: DatabaseSession<DatabaseAdapter> | undefined;

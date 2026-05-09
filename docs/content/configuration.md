@@ -22,6 +22,12 @@ Properties ending in `_SECRET` are treated as secrets by the config loader.
 | `APP_ENV` | `string` | —       | Application environment (`development`, `production`, etc.) |
 | `PORT`    | `number` | `3000`  | HTTP server port                                            |
 
+### Database Selection
+
+| Variable     | Type                       | Default | Description                                                                                |
+| ------------ | -------------------------- | ------- | ------------------------------------------------------------------------------------------ |
+| `DB_ADAPTER` | `'mysql'` \| `'postgres'`  | —       | Selects the database dialect when using `createDatabase(sharedConfig)` (see [Database](./database.md)). |
+
 ### MySQL Database
 
 | Variable                     | Type     | Default             | Description              |

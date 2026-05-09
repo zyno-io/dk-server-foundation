@@ -5,11 +5,12 @@ import { getAppConfig } from '../../../app/resolver';
 import { DBProvider } from '../../../app/state';
 import { createLogger, pinoLogger } from '../../../services';
 import { getDialect } from '../../dialect';
+import { generateBuilderMigrationFromDiff } from './builder-regenerator';
 import { compareSchemas } from './comparator';
 import { readAllTableNames, readDatabaseSchema } from './db-reader';
 import { generateDDL } from './ddl-generator';
 import { readEntitiesSchema } from './entity-reader';
-import { generateMigrationFile } from './file-generator';
+import { generateMigrationFile, writeMigrationFile } from './file-generator';
 import { promptMigrationDescription, setNonInteractive } from './prompt';
 import { INTERNAL_TABLES } from './schema-model';
 
@@ -19,7 +20,10 @@ export class MigrationCreateCommand {
 
     constructor(private dbProvider: DBProvider) {}
 
-    async execute(nonInteractive: boolean & Flag<{ description: 'Skip interactive prompts' }> = false) {
+    async execute(
+        nonInteractive: boolean & Flag<{ description: 'Skip interactive prompts' }> = false,
+        raw: boolean & Flag<{ description: 'Emit raw dialect-specific SQL instead of dialect-portable schema-builder calls' }> = false
+    ) {
         if (nonInteractive) {
             setNonInteractive(true);
         }
@@ -50,10 +54,27 @@ export class MigrationCreateCommand {
             this.logger.info('Comparing schemas...');
             const diff = await compareSchemas(entitySchema, dbSchema, dialect, !nonInteractive, pgSchema);
 
-            // Step 5: Generate DDL
-            const statements = generateDDL(diff);
+            // Step 5: Decide if there are any changes
+            const hasChanges =
+                diff.addedTables.length > 0 ||
+                diff.removedTables.length > 0 ||
+                diff.modifiedTables.some(
+                    t =>
+                        t.addedColumns.length > 0 ||
+                        t.removedColumns.length > 0 ||
+                        t.modifiedColumns.length > 0 ||
+                        t.renamedColumns.length > 0 ||
+                        t.addedIndexes.length > 0 ||
+                        t.removedIndexes.length > 0 ||
+                        t.addedForeignKeys.length > 0 ||
+                        t.removedForeignKeys.length > 0 ||
+                        t.primaryKeyChanged ||
+                        t.addedEnumTypes.length > 0 ||
+                        t.removedEnumTypes.length > 0 ||
+                        t.modifiedEnumTypes.length > 0
+                );
 
-            if (statements.length === 0) {
+            if (!hasChanges) {
                 this.logger.info('No schema changes detected.');
                 return;
             }
@@ -78,16 +99,23 @@ export class MigrationCreateCommand {
                 this.logger.info(`  ${table.tableName}: ${changes.join(', ')}`);
             }
 
-            this.logger.info(`\nDDL statements (${statements.length}):`);
-            for (const stmt of statements) {
-                this.logger.info(`  ${stmt}`);
-            }
-
-            // Step 7: Prompt for description and generate file
+            // Step 7: Render migration content (builder by default; --raw for legacy SQL)
+            let filePath: string;
             pinoLogger.flush();
             await new Promise(resolve => setTimeout(resolve, 100));
             const description = await promptMigrationDescription();
-            const filePath = generateMigrationFile(statements, description);
+
+            if (raw) {
+                const statements = generateDDL(diff);
+                this.logger.info(`\nDDL statements (${statements.length}):`);
+                for (const stmt of statements) this.logger.info(`  ${stmt}`);
+                filePath = generateMigrationFile(statements, description);
+            } else {
+                const content = generateBuilderMigrationFromDiff(diff);
+                this.logger.info(`\nGenerated builder migration (${content.split('\n').length} lines)`);
+                filePath = writeMigrationFile(content, description);
+            }
+
             this.logger.info(`\nMigration file created: ${filePath}`);
         } finally {
             setNonInteractive(false);

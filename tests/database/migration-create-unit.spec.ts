@@ -4048,7 +4048,7 @@ describe('entity field initializer defaults', () => {
             assert.ok(createStmt!.includes("DEFAULT 'active'"), `Should have DEFAULT 'active', got: ${createStmt}`);
         });
 
-        it('should generate DEFAULT for number default (MySQL)', async () => {
+        it('should generate DEFAULT for number default (MySQL: unquoted numeric)', async () => {
             const entity = schema(
                 table('counters', [
                     col({ name: 'id', type: 'int', isPrimaryKey: true, autoIncrement: true, ordinalPosition: 1 }),
@@ -4060,10 +4060,10 @@ describe('entity field initializer defaults', () => {
             const stmts = ddl(diff);
             const createStmt = stmts.find(s => s.includes('CREATE TABLE'));
             assert.ok(createStmt, 'Should have CREATE TABLE statement');
-            assert.ok(createStmt!.includes("DEFAULT '0'"), `Should have DEFAULT '0', got: ${createStmt}`);
+            assert.ok(createStmt!.includes('DEFAULT 0'), `Should have DEFAULT 0, got: ${createStmt}`);
         });
 
-        it('should generate DEFAULT for boolean default (MySQL: 0/1)', async () => {
+        it('should generate DEFAULT for boolean default (MySQL: 0/1 unquoted)', async () => {
             const entity = schema(
                 table('flags', [
                     col({ name: 'id', type: 'int', isPrimaryKey: true, autoIncrement: true, ordinalPosition: 1 }),
@@ -4075,10 +4075,10 @@ describe('entity field initializer defaults', () => {
             const stmts = ddl(diff);
             const createStmt = stmts.find(s => s.includes('CREATE TABLE'));
             assert.ok(createStmt, 'Should have CREATE TABLE statement');
-            assert.ok(createStmt!.includes("DEFAULT '0'"), `Should have DEFAULT '0', got: ${createStmt}`);
+            assert.ok(createStmt!.includes('DEFAULT 0'), `Should have DEFAULT 0, got: ${createStmt}`);
         });
 
-        it('should generate DEFAULT for boolean default (PG: true/false)', async () => {
+        it('should generate DEFAULT for boolean default (PG: TRUE/FALSE literal)', async () => {
             const entity = schema(
                 table('flags', [
                     col({ name: 'id', type: 'int', isPrimaryKey: true, autoIncrement: true, ordinalPosition: 1 }),
@@ -4090,7 +4090,7 @@ describe('entity field initializer defaults', () => {
             const stmts = ddl(diff);
             const createStmt = stmts.find(s => s.includes('CREATE TABLE'));
             assert.ok(createStmt, 'Should have CREATE TABLE statement');
-            assert.ok(createStmt!.includes("DEFAULT 'false'"), `Should have DEFAULT 'false', got: ${createStmt}`);
+            assert.ok(createStmt!.includes('DEFAULT FALSE'), `Should have DEFAULT FALSE, got: ${createStmt}`);
         });
 
         it('should generate DEFAULT CURRENT_TIMESTAMP for Date default (MySQL)', async () => {

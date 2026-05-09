@@ -29,6 +29,25 @@ const app = createApp({
 
 All other MySQL connection options are configured via environment variables (see [Configuration](./configuration.md)).
 
+### Choosing the dialect at runtime — `createDatabase()`
+
+For dialect-agnostic apps, use `createDatabase()` to select MySQL or PostgreSQL via configuration instead of importing one factory or the other.
+
+```typescript
+import { createDatabase } from '@zyno-io/dk-server-foundation';
+
+// Reads DB_ADAPTER ('mysql' or 'postgres') from the environment at module load
+class AppDB extends createDatabase({ enableLocksTable: true }, [User, Post, Comment]) {}
+
+// Or be explicit (each form keeps its dialect-specific pool config)
+class AppDB extends createDatabase('mysql', { connectionLimit: 20, enableLocksTable: true }, [User]) {}
+class AppDB extends createDatabase('postgres', { max: 20, enableLocksTable: true }, [User]) {}
+```
+
+The shared form only accepts `enableLocksTable`; pool tuning is done via the `MYSQL_*` / `PG_*` env vars. The shared form requires `DB_ADAPTER` to be set and throws at call time if it isn't — use the explicit form when you don't want that dependency.
+
+Both forms delegate to `createMySQLDatabase` or `createPostgresDatabase` and return the same kind of class — a subclass of `BaseDatabase`. The existing single-dialect factories remain available.
+
 ## Entity Creation
 
 Type-safe entity creation with automatic inference of optional fields (auto-increment, nullable, or `HasDefault`).
@@ -339,6 +358,115 @@ class User {
     role!: string & HasDefault; // Optional in createEntity()
 }
 ```
+
+## Schema Builder (multi-dialect)
+
+`db.schema` is a Laravel-style fluent schema builder that emits dialect-appropriate SQL at runtime, so a single migration file works on both MySQL and PostgreSQL.
+
+```typescript
+export default createMigration(async db => {
+    await db.schema.create('users', t => {
+        t.id();
+        t.string('email', 255).notNull().unique();
+        t.string('name', 255).nullable();
+        t.boolean('active').notNull().default(false);
+        t.json('metadata').nullable();
+        t.enum('status', ['active', 'pending']).notNull().default('pending');
+        t.dateTime('createdAt').notNull().defaultRaw('CURRENT_TIMESTAMP');
+        t.dateTime('updatedAt').notNull().defaultRaw('CURRENT_TIMESTAMP').onUpdate('CURRENT_TIMESTAMP');
+    });
+
+    await db.schema.create('posts', t => {
+        t.id();
+        t.bigInteger('userId').unsigned().notNull();
+        t.string('title', 200).notNull();
+        t.text('body').nullable();
+        t.foreign('userId').references('id').on('users').onDelete('cascade');
+        t.index('userId');
+    });
+
+    // Escape hatches
+    await db.schema.raw(`UPDATE users SET active = TRUE WHERE id < 100`);
+    await db.schema.onlyOn('postgres', () => db.rawExecute(`CREATE EXTENSION IF NOT EXISTS pg_trgm`));
+});
+```
+
+### Column types
+
+| Method | MySQL | Postgres |
+| ------ | ----- | -------- |
+| `id(name='id')` | `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY` | `BIGSERIAL PRIMARY KEY` |
+| `string(name, len=255)` | `VARCHAR(len)` | `VARCHAR(len)` |
+| `char(name, len=1)` | `CHAR(len)` | `CHAR(len)` |
+| `text(name)` | `TEXT` | `TEXT` |
+| `tinyint`, `smallint`, `integer`, `bigInteger` | `TINYINT`, `SMALLINT`, `INT`, `BIGINT` | `SMALLINT`, `INTEGER`, `BIGINT` (`tinyint` → `SMALLINT`) |
+| `boolean(name)` | `TINYINT(1)` | `BOOLEAN` |
+| `float`, `double`, `decimal(name, p?, s?)` | `FLOAT`, `DOUBLE`, `DECIMAL(p,s)` | `REAL`, `DOUBLE PRECISION`, `NUMERIC(p,s)` |
+| `date(name)` | `DATE` | `DATE` |
+| `dateTime(name)` | `DATETIME` | `TIMESTAMP` |
+| `timestamp(name)` | `TIMESTAMP` | `TIMESTAMP` |
+| `timestamptz(name)` | `TIMESTAMP` | `TIMESTAMPTZ` |
+| `binary(name, len=16)` | `BINARY(len)` | `BYTEA` |
+| `blob(name)` | `BLOB` | `BYTEA` |
+| `json(name)` | `JSON` | `JSON` |
+| `jsonb(name)` | `JSON` | `JSONB` |
+| `uuid(name)` | `BINARY(16)` (canonical) | `UUID` |
+| `uuidString(name)` | `CHAR(36)` | `CHAR(36)` |
+| `enum(name, values, typeName?)` | `ENUM(...)` inline | `CREATE TYPE` (deduped) + qualified ref |
+| `point(name)` | `POINT` | **throws** (MySQL-only) |
+
+### Modifiers
+
+`.nullable()`, `.notNull()`, `.default(value)`, `.defaultRaw(expression)`, `.unsigned()` (MySQL-only, ignored on PG), `.onUpdate(expression)` (MySQL-only), `.autoIncrement()`, `.primary()`, `.unique(name?)`, `.index(name?)`, `.references(col).on(table).onDelete(action).onUpdate(action)`.
+
+### Table-level
+
+`.timestamps()` (createdAt + updatedAt with `CURRENT_TIMESTAMP`), `.primary([cols])` (composite PK), `.index(cols, name?)`, `.unique(cols, name?)`, `.spatialIndex(cols, name?)` (MySQL POINT), `.foreign(cols, name?).references(...).on(...)`.
+
+### Schema operations
+
+`db.schema.create(name, fn)`, `db.schema.alter(name, fn)`, `db.schema.drop(name)`, `db.schema.dropIfExists(name)`, `db.schema.rename(from, to)`, `db.schema.enumType(name, values)` (PG explicit type), `db.schema.raw(sql)`, `db.schema.onlyOn(dialect, fn)`.
+
+### Introspection (for idempotent migrations)
+
+```typescript
+if (!(await db.schema.hasTable('users'))) { /* ... */ }
+if (await db.schema.hasColumn('users', 'phone')) { /* ... */ }
+if (await db.schema.hasIndex('users', 'users_email_unique')) { /* ... */ }
+```
+
+### Altering tables — `db.schema.alter()`
+
+```typescript
+await db.schema.alter('users', t => {
+    // Add columns (same syntax as create)
+    t.string('phone', 20).nullable();
+    t.boolean('archived').notNull().default(false);
+
+    // Modify an existing column (Laravel-style .change() suffix)
+    t.string('email', 500).notNull().change();
+
+    // Drop / rename columns
+    t.dropColumn('legacyField');
+    t.renameColumn('old_name', 'new_name');
+
+    // Indexes & foreign keys
+    t.index('phone');
+    t.dropUnique('users_email_unique');
+    t.foreign('orgId').references('id').on('orgs').onDelete('cascade');
+    t.dropForeign('users_old_fk');
+
+    // Primary key
+    t.dropPrimary();
+    t.primary(['a', 'b']);
+});
+```
+
+Operations execute in dependency-safe order: drop FKs → drop indexes → drop PK → drop columns → rename columns → PG enum type prep → add columns → modify columns → add PK → add indexes → defer added FKs to flush. Added FKs are deferred (same as `create()`) so cross-table refs resolve.
+
+### How FK ordering works
+
+Inline FKs declared via `t.foreign(...)` are deferred and emitted as `ALTER TABLE ... ADD CONSTRAINT` after all `CREATE TABLE`s in the migration complete. The migration runner calls `db.schema.flush()` automatically; you can also call it manually if you need FKs applied mid-migration. PG enum types are deduplicated per-migration via the `enumTypeName` (so the same shared enum across two tables emits only one `CREATE TYPE` + `CREATE CAST`).
 
 ## Migrations
 

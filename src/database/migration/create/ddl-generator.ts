@@ -1,9 +1,27 @@
-import { quoteId } from '../../dialect';
+import { Grammar, MySQLGrammar, PostgresGrammar } from '../../schema';
 import { ColumnModification, ColumnSchema, Dialect, ForeignKeySchema, IndexSchema, SchemaDiff, TableDiff, TableSchema } from './schema-model';
 
-const VALID_FK_ACTIONS = new Set(['RESTRICT', 'CASCADE', 'SET NULL', 'SET DEFAULT', 'NO ACTION']);
-
 export const COMMENT_PREFIX = '\x00comment:';
+
+// --- Grammar delegation ---
+//
+// SQL emission lives in src/database/schema/grammar/. This module owns the high-level
+// diff orchestration (statement ordering, deferred FKs, PG enum dedup, MySQL column
+// reordering, etc.). The thin helpers below delegate to dialect-specific Grammars.
+
+const grammarCache = new Map<string, Grammar>();
+function getGrammar(dialect: Dialect, pgSchema?: string): Grammar {
+    const key = `${dialect}:${pgSchema ?? 'public'}`;
+    let g = grammarCache.get(key);
+    if (!g) {
+        g = dialect === 'mysql' ? new MySQLGrammar(pgSchema ?? 'public') : new PostgresGrammar(pgSchema ?? 'public');
+        grammarCache.set(key, g);
+    }
+    return g;
+}
+function getPgGrammar(pgSchema?: string): PostgresGrammar {
+    return getGrammar('postgres', pgSchema) as PostgresGrammar;
+}
 
 export function generateDDL(diff: SchemaDiff): string[] {
     const statements: string[] = [];
@@ -485,216 +503,33 @@ function generatePostgresTableDDL(diff: TableDiff, pgSchema?: string, globalEnum
 // --- Shared helpers ---
 
 function createTable(table: TableSchema, dialect: Dialect, pgSchema?: string): string {
-    const lines: string[] = [];
-    const pkCols = table.columns.filter(c => c.isPrimaryKey).map(c => c.name);
-
-    for (const col of table.columns) {
-        if (dialect === 'mysql') {
-            lines.push(`    ${mysqlColumnDef(col)}`);
-        } else {
-            lines.push(`    ${pgColumnDef(col, pgSchema)}`);
-        }
-    }
-
-    if (pkCols.length > 0) {
-        const quoted = pkCols.map(c => q(dialect, c)).join(', ');
-        lines.push(`    PRIMARY KEY (${quoted})`);
-    }
-
-    return `CREATE TABLE ${qTable(dialect, table.name, pgSchema)} (\n${lines.join(',\n')}\n)`;
+    return getGrammar(dialect, pgSchema).createTable(table);
 }
 
 function createIndex(tableName: string, idx: IndexSchema, dialect: Dialect, pgSchema?: string): string {
-    const unique = idx.unique ? 'UNIQUE ' : '';
-    const spatial = idx.spatial && dialect === 'mysql' ? 'SPATIAL ' : '';
-    const cols = idx.columns.map(c => q(dialect, c)).join(', ');
-    return `CREATE ${spatial}${unique}INDEX ${q(dialect, idx.name)} ON ${qTable(dialect, tableName, pgSchema)} (${cols})`;
+    return getGrammar(dialect, pgSchema).createIndex(tableName, idx);
 }
 
 function addForeignKey(tableName: string, fk: ForeignKeySchema, dialect: Dialect, pgSchema?: string): string {
-    const cols = fk.columns.map(c => q(dialect, c)).join(', ');
-    const refCols = fk.referencedColumns.map(c => q(dialect, c)).join(', ');
-    const onDelete = validateFkAction(fk.onDelete, dialect);
-    const onUpdate = validateFkAction(fk.onUpdate, dialect);
-    return (
-        `ALTER TABLE ${qTable(dialect, tableName, pgSchema)} ADD CONSTRAINT ${q(dialect, fk.name)} ` +
-        `FOREIGN KEY (${cols}) REFERENCES ${qTable(dialect, fk.referencedTable, pgSchema)} (${refCols}) ` +
-        `ON DELETE ${onDelete} ON UPDATE ${onUpdate}`
-    );
-}
-
-function validateFkAction(action: string, dialect: Dialect): string {
-    const upper = action.toUpperCase();
-    if (!VALID_FK_ACTIONS.has(upper)) {
-        throw new Error(`Invalid foreign key action: '${action}'`);
-    }
-    if (upper === 'SET DEFAULT' && dialect === 'mysql') {
-        throw new Error(`Foreign key action 'SET DEFAULT' is not supported by MySQL/InnoDB`);
-    }
-    return upper;
+    return getGrammar(dialect, pgSchema).addForeignKey(tableName, fk);
 }
 
 function createEnumType(typeName: string, values: string[], pgSchema?: string): string[] {
-    const qualifiedName = qType(typeName, pgSchema);
-    const vals = values.map(v => `'${escapeStr(v)}'`).join(', ');
-    const schemaFilter =
-        pgSchema && pgSchema !== 'public' ? ` AND typnamespace = (SELECT oid FROM pg_namespace WHERE nspname = '${escapeStr(pgSchema)}')` : '';
-    return [
-        [
-            `DO $$ BEGIN`,
-            `IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = '${escapeStr(typeName)}'${schemaFilter}) THEN`,
-            `    CREATE TYPE ${qualifiedName} AS ENUM (${vals});`,
-            `END IF;`,
-            `END $$`
-        ].join('\n'),
-        `CREATE CAST (text AS ${qualifiedName}) WITH INOUT AS IMPLICIT`
-    ];
+    return getPgGrammar(pgSchema).createEnumType(typeName, values);
 }
 
-// --- MySQL column definition ---
+// --- Column definition (delegated to Grammar) ---
 
 function mysqlColumnDef(col: ColumnSchema): string {
-    let def = `${q('mysql', col.name)} ${mysqlTypeDef(col)}`;
-
-    if (col.unsigned) def += ' UNSIGNED';
-    if (!col.nullable) def += ' NOT NULL';
-    if (col.autoIncrement) def += ' AUTO_INCREMENT';
-
-    if (col.defaultExpression) {
-        def += ` DEFAULT ${col.defaultExpression}`;
-    } else if (col.defaultValue !== undefined) {
-        def += ` DEFAULT '${escapeStr(String(col.defaultValue), 'mysql')}'`;
-    }
-
-    if (col.onUpdateExpression) {
-        def += ` ON UPDATE ${col.onUpdateExpression}`;
-    }
-
-    return def;
+    return getGrammar('mysql').columnDef(col);
 }
-
-function mysqlTypeDef(col: ColumnSchema): string {
-    switch (col.type) {
-        case 'varchar':
-            return `VARCHAR(${col.size || 255})`;
-        case 'char':
-            return `CHAR(${col.size || 1})`;
-        case 'tinyint':
-            return col.size === 1 ? 'TINYINT(1)' : 'TINYINT';
-        case 'smallint':
-            return 'SMALLINT';
-        case 'int':
-            return 'INT';
-        case 'bigint':
-            return 'BIGINT';
-        case 'float':
-            return 'FLOAT';
-        case 'double':
-            return 'DOUBLE';
-        case 'decimal':
-            if (col.size === undefined) return 'DECIMAL';
-            return col.scale !== undefined ? `DECIMAL(${col.size},${col.scale})` : `DECIMAL(${col.size})`;
-        case 'boolean':
-            return 'TINYINT(1)';
-        case 'date':
-            return 'DATE';
-        case 'datetime':
-            return 'DATETIME';
-        case 'timestamp':
-            return 'TIMESTAMP';
-        case 'text':
-            return 'TEXT';
-        case 'binary':
-            return `BINARY(${col.size || 16})`;
-        case 'blob':
-            return 'BLOB';
-        case 'json':
-            return 'JSON';
-        case 'point':
-            return 'POINT';
-        case 'enum':
-            if (col.enumValues) {
-                const vals = col.enumValues.map(v => `'${escapeStr(v, 'mysql')}'`).join(',');
-                return `ENUM(${vals})`;
-            }
-            return 'VARCHAR(255)';
-        default:
-            return col.type.toUpperCase();
-    }
-}
-
-// --- PostgreSQL column definition ---
 
 function pgColumnDef(col: ColumnSchema, pgSchema?: string): string {
-    let typeDef: string;
-    if (col.autoIncrement) {
-        // Use SERIAL/BIGSERIAL for auto-increment
-        typeDef = col.type === 'bigint' ? 'BIGSERIAL' : 'SERIAL';
-    } else {
-        typeDef = pgTypeDef(col, pgSchema);
-    }
-
-    let def = `${q('postgres', col.name)} ${typeDef}`;
-
-    if (!col.nullable && !col.autoIncrement) def += ' NOT NULL';
-
-    if (!col.autoIncrement) {
-        if (col.defaultExpression) {
-            def += ` DEFAULT ${col.defaultExpression}`;
-        } else if (col.defaultValue !== undefined) {
-            def += ` DEFAULT '${escapeStr(String(col.defaultValue))}'`;
-        }
-    }
-
-    return def;
+    return getGrammar('postgres', pgSchema).columnDef(col);
 }
 
 function pgTypeDef(col: ColumnSchema, pgSchema?: string): string {
-    switch (col.type) {
-        case 'varchar':
-            return col.size ? `VARCHAR(${col.size})` : 'VARCHAR';
-        case 'char':
-            return `CHAR(${col.size || 1})`;
-        case 'smallint':
-            return 'SMALLINT';
-        case 'int':
-        case 'integer':
-            return 'INTEGER';
-        case 'bigint':
-            return 'BIGINT';
-        case 'real':
-        case 'float':
-            return 'REAL';
-        case 'double precision':
-        case 'double':
-            return 'DOUBLE PRECISION';
-        case 'decimal':
-        case 'numeric':
-            if (col.size === undefined) return 'NUMERIC';
-            return col.scale !== undefined ? `NUMERIC(${col.size},${col.scale})` : `NUMERIC(${col.size})`;
-        case 'boolean':
-            return 'BOOLEAN';
-        case 'date':
-            return 'DATE';
-        case 'timestamp':
-            return 'TIMESTAMP';
-        case 'timestamptz':
-            return 'TIMESTAMPTZ';
-        case 'text':
-            return 'TEXT';
-        case 'bytea':
-            return 'BYTEA';
-        case 'json':
-            return 'JSON';
-        case 'jsonb':
-            return 'JSONB';
-        case 'uuid':
-            return 'UUID';
-        case 'enum':
-            return col.enumTypeName ? qType(col.enumTypeName, pgSchema) : 'TEXT';
-        default:
-            return col.type.toUpperCase();
-    }
+    return getPgGrammar(pgSchema).columnType(col);
 }
 
 // --- AFTER clause helpers (MySQL) ---
@@ -737,35 +572,23 @@ function findAfterClauseForExisting(colName: string, diff: TableDiff, dialect: D
 }
 
 function q(dialect: Dialect, name: string): string {
-    return quoteId(dialect, name);
+    return getGrammar(dialect).quote(name);
 }
 
 function qTable(dialect: Dialect, name: string, pgSchema?: string): string {
-    if (dialect === 'postgres' && pgSchema && pgSchema !== 'public') {
-        return `${quoteId(dialect, pgSchema)}.${quoteId(dialect, name)}`;
-    }
-    return quoteId(dialect, name);
+    return getGrammar(dialect, pgSchema).qualifiedTable(name);
 }
 
 function qType(typeName: string, pgSchema?: string): string {
-    if (pgSchema && pgSchema !== 'public') {
-        return `${quoteId('postgres', pgSchema)}.${quoteId('postgres', typeName)}`;
-    }
-    return quoteId('postgres', typeName);
+    return getPgGrammar(pgSchema).qualifiedType(typeName);
 }
 
 function pgRegclass(name: string, pgSchema?: string): string {
-    // Build a regclass-compatible identifier string with proper quoting for use inside SQL string literals
-    if (pgSchema && pgSchema !== 'public') {
-        return `${quoteId('postgres', pgSchema)}.${quoteId('postgres', name)}`;
-    }
-    return quoteId('postgres', name);
+    // Same form as qualifiedType — used in SQL string literals (quoted identifiers).
+    return getPgGrammar(pgSchema).qualifiedType(name);
 }
 
 function escapeStr(s: string, dialect?: Dialect): string {
-    // MySQL also treats backslashes as escape characters in string literals
-    if (dialect === 'mysql') {
-        s = s.replace(/\\/g, '\\\\');
-    }
+    if (dialect === 'mysql') s = s.replace(/\\/g, '\\\\');
     return s.replace(/'/g, "''");
 }

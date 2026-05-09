@@ -5,6 +5,11 @@ import { getSourceMigrationsDir } from '../helpers';
 import { COMMENT_PREFIX } from './ddl-generator';
 
 export function generateMigrationFile(statements: string[], description: string): string {
+    return writeMigrationFile(buildFileContent(statements), description);
+}
+
+/** Write pre-rendered file content (e.g. builder-based) to a timestamped migration file. */
+export function writeMigrationFile(content: string, description: string): string {
     const migrationsDir = getSourceMigrationsDir();
 
     if (!existsSync(migrationsDir)) {
@@ -16,7 +21,6 @@ export function generateMigrationFile(statements: string[], description: string)
     const filename = `${timestamp}_${slug}.ts`;
     const filePath = path.join(migrationsDir, filename);
 
-    const content = buildFileContent(statements);
     writeFileSync(filePath, content, 'utf8');
 
     return filePath;

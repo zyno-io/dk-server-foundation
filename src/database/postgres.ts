@@ -1,12 +1,11 @@
 import { ClassType } from '@deepkit/core';
-import { Logger } from '@deepkit/logger';
 import { Database, DatabaseSession } from '@deepkit/orm';
 import { PostgresConnection, PostgresDatabaseAdapter as BasePostgresDatabaseAdapter } from '@deepkit/postgres';
 import { isNonUndefined } from '@deepkit/sql';
 import { ReflectionKind, Type } from '@deepkit/type';
 import { PoolConfig } from 'pg';
 
-import { getAppConfig, r } from '../app/resolver';
+import { getAppConfig } from '../app/resolver';
 import { globalState } from '../app/state';
 import { BaseDatabase } from './common';
 
@@ -46,6 +45,7 @@ export class PostgresDatabaseAdapter extends BasePostgresDatabaseAdapter {
 }
 
 export interface IPostgresDatabaseAdapterConfig extends PoolConfig {
+    /** Accepted for cross-dialect API parity with createMySQLDatabase. PG uses `pg_advisory_xact_lock` for session locks — no table needed. */
     enableLocksTable?: boolean;
 }
 
@@ -58,7 +58,7 @@ export function createPostgresDatabase(
             const appConfig = getAppConfig();
             const isProduction = appConfig.APP_ENV === 'production';
 
-            const { enableLocksTable, ...otherConfig } = config;
+            const { enableLocksTable: _enableLocksTable, ...otherConfig } = config;
 
             const ssl = appConfig.PG_SSL ? { rejectUnauthorized: appConfig.PG_SSL_REJECT_UNAUTHORIZED ?? true } : undefined;
 
@@ -81,20 +81,6 @@ export function createPostgresDatabase(
             }
 
             super(adapter, entities);
-
-            if (enableLocksTable) {
-                this.rawExecute(
-                    `CREATE TABLE IF NOT EXISTS "_locks" (
-                        "key" VARCHAR(255) NOT NULL PRIMARY KEY,
-                        "createdAt" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                        "lastTouched" TIMESTAMP
-                    )`
-                )
-                    .then(() => this.rawExecute(`DELETE FROM "_locks" WHERE "lastTouched" < NOW() - INTERVAL '1 hour'`))
-                    .catch(err => {
-                        r(Logger).error(`Could not create _locks table: %s`, err);
-                    });
-            }
         }
     };
 }

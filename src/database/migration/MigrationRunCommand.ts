@@ -110,6 +110,8 @@ export class MigrationRunCommand {
 
         try {
             await migrationModule.default(this.dbProvider.db);
+            // Apply deferred schema-builder statements (FKs) and reset per-migration state.
+            await this.dbProvider.db.schema.flush();
         } catch (err) {
             this.logger.error('Migration function failed to execute', err, { file });
             throw err;

@@ -47,8 +47,13 @@ async function readMySQLTable(db: BaseDatabase, tableName: string): Promise<Tabl
     const columns = await readMySQLColumns(db, tableName);
     if (columns.length === 0) return null;
 
-    const indexes = await readMySQLIndexes(db, tableName);
+    const allIndexes = await readMySQLIndexes(db, tableName);
     const foreignKeys = await readMySQLForeignKeys(db, tableName);
+
+    // MySQL auto-creates an index for FK columns (same name as the FK) if no covering index exists.
+    // Filter those out so they don't show up as spurious added/removed-index diffs.
+    const fkNames = new Set(foreignKeys.map(fk => fk.name));
+    const indexes = allIndexes.filter(idx => !fkNames.has(idx.name));
 
     return { name: tableName, columns, indexes, foreignKeys };
 }
@@ -74,7 +79,9 @@ async function readMySQLColumns(db: BaseDatabase, tableName: string): Promise<Co
             name: row.COLUMN_NAME,
             type: normalizeMySQLType(dataType, columnType),
             size: inferMySQLSize(dataType, columnType, row.CHARACTER_MAXIMUM_LENGTH, row.NUMERIC_PRECISION),
-            scale: row.NUMERIC_SCALE != null ? Number(row.NUMERIC_SCALE) : undefined,
+            // Scale is only meaningful for decimal/numeric. MySQL reports NUMERIC_SCALE=0
+            // for ints, which would cause spurious typeChanged diffs against entity-reader output.
+            scale: (dataType === 'decimal' || dataType === 'numeric') && row.NUMERIC_SCALE != null ? Number(row.NUMERIC_SCALE) : undefined,
             unsigned: columnType.includes('unsigned'),
             nullable: row.IS_NULLABLE === 'YES',
             autoIncrement: extra.includes('auto_increment'),
@@ -230,7 +237,7 @@ async function readPostgresColumns(db: BaseDatabase, tableName: string, pgSchema
             name: row.column_name,
             type: dataType,
             size: inferPostgresSize(dataType, row.character_maximum_length, row.numeric_precision),
-            scale: row.numeric_scale != null ? Number(row.numeric_scale) : undefined,
+            scale: (dataType === 'decimal' || dataType === 'numeric') && row.numeric_scale != null ? Number(row.numeric_scale) : undefined,
             unsigned: false,
             nullable: row.is_nullable === 'YES',
             autoIncrement: isSerial,
@@ -331,10 +338,40 @@ async function readPostgresIndexes(db: BaseDatabase, tableName: string, pgSchema
 
     return rows.map(row => ({
         name: row.index_name,
-        columns: Array.isArray(row.columns) ? row.columns : [row.columns],
+        columns: parsePgTextArray(row.columns),
         unique: row.is_unique,
         spatial: false
     }));
+}
+
+/** Parse a Postgres text array literal like `{a,b,"c d"}` into a JS string array.
+ *  Accepts already-parsed arrays unchanged. */
+function parsePgTextArray(value: unknown): string[] {
+    if (Array.isArray(value)) return value as string[];
+    if (typeof value !== 'string') return [];
+    const s = value.trim();
+    if (!s.startsWith('{') || !s.endsWith('}')) return [s];
+    const inner = s.slice(1, -1);
+    if (inner === '') return [];
+    // Split on commas not inside quotes; strip surrounding double quotes if present
+    const out: string[] = [];
+    let cur = '';
+    let inQuote = false;
+    for (let i = 0; i < inner.length; i++) {
+        const ch = inner[i];
+        if (ch === '"' && inner[i - 1] !== '\\') {
+            inQuote = !inQuote;
+            continue;
+        }
+        if (ch === ',' && !inQuote) {
+            out.push(cur);
+            cur = '';
+            continue;
+        }
+        cur += ch;
+    }
+    if (cur.length > 0 || out.length > 0) out.push(cur);
+    return out;
 }
 
 async function readPostgresForeignKeys(db: BaseDatabase, tableName: string, pgSchema: string = 'public'): Promise<ForeignKeySchema[]> {
@@ -371,9 +408,9 @@ async function readPostgresForeignKeys(db: BaseDatabase, tableName: string, pgSc
 
     return rows.map(row => ({
         name: row.constraint_name,
-        columns: Array.isArray(row.columns) ? row.columns : [row.columns],
+        columns: parsePgTextArray(row.columns),
         referencedTable: row.referenced_table,
-        referencedColumns: Array.isArray(row.referenced_columns) ? row.referenced_columns : [row.referenced_columns],
+        referencedColumns: parsePgTextArray(row.referenced_columns),
         onDelete: (row.delete_rule || 'RESTRICT').toUpperCase(),
         onUpdate: (row.update_rule || 'RESTRICT').toUpperCase()
     }));

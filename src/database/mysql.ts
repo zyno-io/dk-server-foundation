@@ -1,5 +1,4 @@
 import { ClassType, getClassName } from '@deepkit/core';
-import { Logger } from '@deepkit/logger';
 import { MySQLConnection, MySQLDatabaseAdapter as BaseMySQLDatabaseAdapter } from '@deepkit/mysql';
 import { Database, DatabaseSession } from '@deepkit/orm';
 import { isNonUndefined } from '@deepkit/sql';
@@ -7,7 +6,7 @@ import { databaseAnnotation, ReflectionKind, Type } from '@deepkit/type';
 import { PoolConfig } from 'mariadb';
 
 import { Coordinate } from '.';
-import { getAppConfig, r } from '../app/resolver';
+import { getAppConfig } from '../app/resolver';
 import { globalState } from '../app/state';
 import { BaseDatabase } from './common';
 
@@ -120,21 +119,14 @@ export function createMySQLDatabase(
                 entities.push(...globalState.additionalEntities);
             }
 
-            super(adapter, entities);
-
+            // Mark the adapter so acquireSessionLock can lazy-init the _locks table on first use.
+            // Constructor-time fire-and-forget would race with pool teardown for short-lived CLI
+            // commands like migration:reset that don't issue any DB work.
             if (enableLocksTable) {
-                this.rawExecute(
-                    `CREATE TABLE IF NOT EXISTS \`_locks\` (
-                        \`key\` VARCHAR(255) NOT NULL PRIMARY KEY,
-                        \`createdAt\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                        \`lastTouched\` DATETIME
-                    )`
-                )
-                    .then(() => this.rawExecute(`DELETE FROM _locks WHERE lastTouched < NOW() - INTERVAL 1 HOUR`))
-                    .catch(err => {
-                        r(Logger).error(`Could not create _locks table: %s`, err);
-                    });
+                (adapter as unknown as { _enableLocksTable: boolean })._enableLocksTable = true;
             }
+
+            super(adapter, entities);
         }
     };
 }
