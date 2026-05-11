@@ -84,7 +84,7 @@
         "@jenniferplusplus/opentelemetry-instrumentation-bullmq": "^0.5.1",
         "@opentelemetry/api": "^1.9.1",
         "@opentelemetry/exporter-metrics-otlp-http": "^0.214.0",
-        "@opentelemetry/exporter-prometheus": "^0.214.0",
+        "@opentelemetry/exporter-prometheus": "^0.217.0",
         "@opentelemetry/exporter-trace-otlp-http": "^0.214.0",
         "@opentelemetry/instrumentation": "^0.214.0",
         "@opentelemetry/instrumentation-dns": "^0.57.0",
