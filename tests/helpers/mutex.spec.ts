@@ -251,8 +251,10 @@ describe('redis mutex', () => {
             renewInterval: 100
         });
 
-        // Verify the function completed
-        assert.ok(executionTime >= 300);
+        // Verify the function completed and held the lock for ~the full duration.
+        // Allow a few ms of slack: setTimeout can fire fractionally early on a
+        // loaded runner, so an exact `>= 300` check is flaky in CI.
+        assert.ok(executionTime >= 290, `expected executionTime >= 290, got ${executionTime}`);
     });
 
     it('allows different keys to be acquired concurrently', async () => {
