@@ -234,4 +234,49 @@ describe('builder regenerator', () => {
         assert.match(src, /t\.point\('loc'\);/);
         assert.match(src, /t\.spatialIndex\('loc'\);/);
     });
+
+    it('renders text and its MySQL size variants', () => {
+        const tables: TableSchema[] = [
+            {
+                name: 'docs',
+                columns: [
+                    { name: 'body', type: 'text', unsigned: false, nullable: false, autoIncrement: false, isPrimaryKey: false, ordinalPosition: 1 },
+                    {
+                        name: 'blurb',
+                        type: 'tinytext',
+                        unsigned: false,
+                        nullable: false,
+                        autoIncrement: false,
+                        isPrimaryKey: false,
+                        ordinalPosition: 2
+                    },
+                    {
+                        name: 'systemPrompt',
+                        type: 'mediumtext',
+                        unsigned: false,
+                        nullable: false,
+                        autoIncrement: false,
+                        isPrimaryKey: false,
+                        ordinalPosition: 3
+                    },
+                    {
+                        name: 'archive',
+                        type: 'longtext',
+                        unsigned: false,
+                        nullable: false,
+                        autoIncrement: false,
+                        isPrimaryKey: false,
+                        ordinalPosition: 4
+                    }
+                ],
+                indexes: [],
+                foreignKeys: []
+            }
+        ];
+        const src = generateBuilderMigrationFile(tables);
+        assert.match(src, /t\.text\('body'\);/);
+        assert.match(src, /t\.tinyText\('blurb'\);/);
+        assert.match(src, /t\.mediumText\('systemPrompt'\);/);
+        assert.match(src, /t\.longText\('archive'\);/);
+    });
 });

@@ -73,6 +73,45 @@ export abstract class BlueprintBase {
         });
     }
 
+    /** MySQL TINYTEXT (≤255 bytes). On PostgreSQL maps to TEXT. */
+    tinyText(name: string): ColumnDefinition {
+        return this.addColumnImpl({
+            name,
+            type: 'tinytext',
+            unsigned: false,
+            nullable: false,
+            autoIncrement: false,
+            isPrimaryKey: false,
+            ordinalPosition: 0
+        });
+    }
+
+    /** MySQL MEDIUMTEXT (≤16MB). On PostgreSQL maps to TEXT. */
+    mediumText(name: string): ColumnDefinition {
+        return this.addColumnImpl({
+            name,
+            type: 'mediumtext',
+            unsigned: false,
+            nullable: false,
+            autoIncrement: false,
+            isPrimaryKey: false,
+            ordinalPosition: 0
+        });
+    }
+
+    /** MySQL LONGTEXT (≤4GB). On PostgreSQL maps to TEXT. */
+    longText(name: string): ColumnDefinition {
+        return this.addColumnImpl({
+            name,
+            type: 'longtext',
+            unsigned: false,
+            nullable: false,
+            autoIncrement: false,
+            isPrimaryKey: false,
+            ordinalPosition: 0
+        });
+    }
+
     tinyint(name: string): ColumnDefinition {
         return this.addColumnImpl({
             name,

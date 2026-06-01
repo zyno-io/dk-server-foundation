@@ -160,6 +160,12 @@ export class MySQLGrammar extends Grammar {
                 return 'TIMESTAMP';
             case 'text':
                 return 'TEXT';
+            case 'tinytext':
+                return 'TINYTEXT';
+            case 'mediumtext':
+                return 'MEDIUMTEXT';
+            case 'longtext':
+                return 'LONGTEXT';
             case 'binary':
                 return `BINARY(${col.size || 16})`;
             case 'blob':

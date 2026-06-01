@@ -199,7 +199,11 @@ export class PostgresGrammar extends Grammar {
                 return 'TIMESTAMP';
             case 'timestamptz':
                 return 'TIMESTAMPTZ';
+            // PostgreSQL has no size-bounded text variants — they all collapse to TEXT.
             case 'text':
+            case 'tinytext':
+            case 'mediumtext':
+            case 'longtext':
                 return 'TEXT';
             case 'bytea':
                 return 'BYTEA';

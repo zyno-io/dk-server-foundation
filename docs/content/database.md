@@ -393,27 +393,30 @@ export default createMigration(async db => {
 
 ### Column types
 
-| Method | MySQL | Postgres |
-| ------ | ----- | -------- |
-| `id(name='id')` | `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY` | `BIGSERIAL PRIMARY KEY` |
-| `string(name, len=255)` | `VARCHAR(len)` | `VARCHAR(len)` |
-| `char(name, len=1)` | `CHAR(len)` | `CHAR(len)` |
-| `text(name)` | `TEXT` | `TEXT` |
-| `tinyint`, `smallint`, `integer`, `bigInteger` | `TINYINT`, `SMALLINT`, `INT`, `BIGINT` | `SMALLINT`, `INTEGER`, `BIGINT` (`tinyint` → `SMALLINT`) |
-| `boolean(name)` | `TINYINT(1)` | `BOOLEAN` |
-| `float`, `double`, `decimal(name, p?, s?)` | `FLOAT`, `DOUBLE`, `DECIMAL(p,s)` | `REAL`, `DOUBLE PRECISION`, `NUMERIC(p,s)` |
-| `date(name)` | `DATE` | `DATE` |
-| `dateTime(name)` | `DATETIME` | `TIMESTAMP` |
-| `timestamp(name)` | `TIMESTAMP` | `TIMESTAMP` |
-| `timestamptz(name)` | `TIMESTAMP` | `TIMESTAMPTZ` |
-| `binary(name, len=16)` | `BINARY(len)` | `BYTEA` |
-| `blob(name)` | `BLOB` | `BYTEA` |
-| `json(name)` | `JSON` | `JSON` |
-| `jsonb(name)` | `JSON` | `JSONB` |
-| `uuid(name)` | `BINARY(16)` (canonical) | `UUID` |
-| `uuidString(name)` | `CHAR(36)` | `CHAR(36)` |
-| `enum(name, values, typeName?)` | `ENUM(...)` inline | `CREATE TYPE` (deduped) + qualified ref |
-| `point(name)` | `POINT` | **throws** (MySQL-only) |
+| Method                                         | MySQL                                                 | Postgres                                                 |
+| ---------------------------------------------- | ----------------------------------------------------- | -------------------------------------------------------- |
+| `id(name='id')`                                | `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY` | `BIGSERIAL PRIMARY KEY`                                  |
+| `string(name, len=255)`                        | `VARCHAR(len)`                                        | `VARCHAR(len)`                                           |
+| `char(name, len=1)`                            | `CHAR(len)`                                           | `CHAR(len)`                                              |
+| `text(name)`                                   | `TEXT`                                                | `TEXT`                                                   |
+| `tinyText(name)`                               | `TINYTEXT`                                            | `TEXT`                                                   |
+| `mediumText(name)`                             | `MEDIUMTEXT`                                          | `TEXT`                                                   |
+| `longText(name)`                               | `LONGTEXT`                                            | `TEXT`                                                   |
+| `tinyint`, `smallint`, `integer`, `bigInteger` | `TINYINT`, `SMALLINT`, `INT`, `BIGINT`                | `SMALLINT`, `INTEGER`, `BIGINT` (`tinyint` → `SMALLINT`) |
+| `boolean(name)`                                | `TINYINT(1)`                                          | `BOOLEAN`                                                |
+| `float`, `double`, `decimal(name, p?, s?)`     | `FLOAT`, `DOUBLE`, `DECIMAL(p,s)`                     | `REAL`, `DOUBLE PRECISION`, `NUMERIC(p,s)`               |
+| `date(name)`                                   | `DATE`                                                | `DATE`                                                   |
+| `dateTime(name)`                               | `DATETIME`                                            | `TIMESTAMP`                                              |
+| `timestamp(name)`                              | `TIMESTAMP`                                           | `TIMESTAMP`                                              |
+| `timestamptz(name)`                            | `TIMESTAMP`                                           | `TIMESTAMPTZ`                                            |
+| `binary(name, len=16)`                         | `BINARY(len)`                                         | `BYTEA`                                                  |
+| `blob(name)`                                   | `BLOB`                                                | `BYTEA`                                                  |
+| `json(name)`                                   | `JSON`                                                | `JSON`                                                   |
+| `jsonb(name)`                                  | `JSON`                                                | `JSONB`                                                  |
+| `uuid(name)`                                   | `BINARY(16)` (canonical)                              | `UUID`                                                   |
+| `uuidString(name)`                             | `CHAR(36)`                                            | `CHAR(36)`                                               |
+| `enum(name, values, typeName?)`                | `ENUM(...)` inline                                    | `CREATE TYPE` (deduped) + qualified ref                  |
+| `point(name)`                                  | `POINT`                                               | **throws** (MySQL-only)                                  |
 
 ### Modifiers
 
@@ -430,9 +433,15 @@ export default createMigration(async db => {
 ### Introspection (for idempotent migrations)
 
 ```typescript
-if (!(await db.schema.hasTable('users'))) { /* ... */ }
-if (await db.schema.hasColumn('users', 'phone')) { /* ... */ }
-if (await db.schema.hasIndex('users', 'users_email_unique')) { /* ... */ }
+if (!(await db.schema.hasTable('users'))) {
+    /* ... */
+}
+if (await db.schema.hasColumn('users', 'phone')) {
+    /* ... */
+}
+if (await db.schema.hasIndex('users', 'users_email_unique')) {
+    /* ... */
+}
 ```
 
 ### Altering tables — `db.schema.alter()`

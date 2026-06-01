@@ -178,6 +178,12 @@ function pickBuilderMethod(col: ColumnSchema): string {
             return `char(${n}, ${col.size ?? 1})`;
         case 'text':
             return `text(${n})`;
+        case 'tinytext':
+            return `tinyText(${n})`;
+        case 'mediumtext':
+            return `mediumText(${n})`;
+        case 'longtext':
+            return `longText(${n})`;
         case 'tinyint':
             // tinyint(1) is the canonical MySQL boolean storage; map back to .boolean()
             if (col.size === 1) return `boolean(${n})`;
