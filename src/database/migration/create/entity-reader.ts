@@ -516,8 +516,9 @@ function resolvePrimitiveType(type: Type, dialect: Dialect, columnName?: string)
             return { type: 'int' };
 
         case ReflectionKind.boolean:
-            // Canonical boolean storage on MySQL is TINYINT(1) UNSIGNED.
-            return dialect === 'mysql' ? { type: 'tinyint', size: 1, unsigned: true } : { type: 'boolean' };
+            // Canonical boolean storage on MySQL is TINYINT(1) (signed) — MySQL drops the (1) display
+            // width if the column is UNSIGNED, so an unsigned boolean would not round-trip.
+            return dialect === 'mysql' ? { type: 'tinyint', size: 1 } : { type: 'boolean' };
 
         case ReflectionKind.bigint:
             return { type: 'bigint' };
@@ -538,7 +539,7 @@ function resolvePrimitiveType(type: Type, dialect: Dialect, columnName?: string)
             if (typeof literal === 'string') return { type: 'varchar', size: 255 };
             if (typeof literal === 'number') return { type: 'int' };
             if (typeof literal === 'boolean') {
-                return dialect === 'mysql' ? { type: 'tinyint', size: 1, unsigned: true } : { type: 'boolean' };
+                return dialect === 'mysql' ? { type: 'tinyint', size: 1 } : { type: 'boolean' };
             }
             return null;
         }

@@ -25,6 +25,7 @@ const emptyTableDiff = (tableName: string): TableDiff => ({
     reorderedColumns: [],
     addedIndexes: [],
     removedIndexes: [],
+    renamedIndexes: [],
     addedForeignKeys: [],
     removedForeignKeys: [],
     primaryKeyChanged: false,

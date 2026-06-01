@@ -85,10 +85,7 @@ async function readMySQLColumns(db: BaseDatabase, tableName: string): Promise<Co
             // Scale is only meaningful for decimal/numeric. MySQL reports NUMERIC_SCALE=0
             // for ints, which would cause spurious typeChanged diffs against entity-reader output.
             scale: (dataType === 'decimal' || dataType === 'numeric') && row.NUMERIC_SCALE != null ? Number(row.NUMERIC_SCALE) : undefined,
-            // tinyint(1) is the canonical boolean storage; treat it as unsigned regardless of the
-            // column's actual signedness so a boolean entity (TINYINT(1) UNSIGNED) matches existing
-            // signed tinyint(1) columns without churn.
-            unsigned: columnType.startsWith('tinyint(1)') ? true : columnType.includes('unsigned'),
+            unsigned: columnType.includes('unsigned'),
             nullable: row.IS_NULLABLE === 'YES',
             autoIncrement: extra.includes('auto_increment'),
             isPrimaryKey: row.COLUMN_KEY === 'PRI',

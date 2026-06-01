@@ -147,9 +147,8 @@ function renderPositioning(col: ColumnSchema, entityColumns: ColumnSchema[], add
 function renderColumnLine(col: ColumnSchema, table: TableSchema): string {
     let line = `t.${pickBuilderMethod(col)}`;
 
-    // Modifier order chosen to read naturally.
-    // boolean is rendered via .boolean() (which is TINYINT(1) UNSIGNED) — don't double-emit .unsigned().
-    if (col.unsigned && !(col.type === 'tinyint' && col.size === 1)) line += '.unsigned()';
+    // Modifier order chosen to read naturally
+    if (col.unsigned) line += '.unsigned()';
     if (col.nullable) line += '.nullable()';
     if (col.autoIncrement) line += '.autoIncrement()';
 
