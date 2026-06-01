@@ -71,7 +71,10 @@ async function readMySQLColumns(db: BaseDatabase, tableName: string): Promise<Co
     );
 
     return rows.map(row => {
-        const columnType = (row.COLUMN_TYPE || '').toLowerCase();
+        // Original-case COLUMN_TYPE is needed for enum value extraction (enum labels are
+        // case-sensitive); a lowercased copy is used for everything else (type/unsigned detection).
+        const columnTypeRaw = row.COLUMN_TYPE || '';
+        const columnType = columnTypeRaw.toLowerCase();
         const dataType = (row.DATA_TYPE || '').toLowerCase();
         const extra = (row.EXTRA || '').toLowerCase();
 
@@ -82,16 +85,19 @@ async function readMySQLColumns(db: BaseDatabase, tableName: string): Promise<Co
             // Scale is only meaningful for decimal/numeric. MySQL reports NUMERIC_SCALE=0
             // for ints, which would cause spurious typeChanged diffs against entity-reader output.
             scale: (dataType === 'decimal' || dataType === 'numeric') && row.NUMERIC_SCALE != null ? Number(row.NUMERIC_SCALE) : undefined,
-            unsigned: columnType.includes('unsigned'),
+            // tinyint(1) is the canonical boolean storage; treat it as unsigned regardless of the
+            // column's actual signedness so a boolean entity (TINYINT(1) UNSIGNED) matches existing
+            // signed tinyint(1) columns without churn.
+            unsigned: columnType.startsWith('tinyint(1)') ? true : columnType.includes('unsigned'),
             nullable: row.IS_NULLABLE === 'YES',
             autoIncrement: extra.includes('auto_increment'),
             isPrimaryKey: row.COLUMN_KEY === 'PRI',
             ordinalPosition: Number(row.ORDINAL_POSITION)
         };
 
-        // Parse enum values
+        // Parse enum values from the original-case COLUMN_TYPE to preserve label casing.
         if (dataType === 'enum') {
-            col.enumValues = parseEnumValues(columnType);
+            col.enumValues = parseEnumValues(columnTypeRaw);
         }
 
         // Default value
@@ -122,9 +128,18 @@ async function readMySQLIndexes(db: BaseDatabase, tableName: string): Promise<In
     const rows: any[] = await db.rawQuery(`SHOW INDEX FROM ${quoteId('mysql', tableName)}`);
 
     const indexMap = new Map<string, { schema: IndexSchema; columnsBySeq: { seq: number; name: string }[] }>();
+    // Functional / expression indexes (e.g. multi-valued `CAST(json AS ... ARRAY)`) report a NULL
+    // Column_name with an Expression instead. They can't be expressed via entity decorators, so we
+    // exclude them entirely rather than emit a half-read (and spuriously dropped) index.
+    const expressionIndexes = new Set<string>();
     for (const row of rows) {
         const keyName = row.Key_name;
         if (keyName === 'PRIMARY') continue; // PK is handled separately
+
+        if (row.Column_name == null) {
+            expressionIndexes.add(keyName);
+            continue;
+        }
 
         if (!indexMap.has(keyName)) {
             indexMap.set(keyName, {
@@ -139,6 +154,8 @@ async function readMySQLIndexes(db: BaseDatabase, tableName: string): Promise<In
         }
         indexMap.get(keyName)!.columnsBySeq.push({ seq: Number(row.Seq_in_index), name: row.Column_name });
     }
+
+    for (const keyName of expressionIndexes) indexMap.delete(keyName);
 
     // Sort columns by Seq_in_index to ensure correct multi-column index order
     for (const entry of indexMap.values()) {

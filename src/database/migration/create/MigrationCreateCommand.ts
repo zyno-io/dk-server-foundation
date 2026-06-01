@@ -66,6 +66,7 @@ export class MigrationCreateCommand {
                         t.renamedColumns.length > 0 ||
                         t.addedIndexes.length > 0 ||
                         t.removedIndexes.length > 0 ||
+                        t.renamedIndexes.length > 0 ||
                         t.addedForeignKeys.length > 0 ||
                         t.removedForeignKeys.length > 0 ||
                         t.primaryKeyChanged ||
@@ -95,6 +96,7 @@ export class MigrationCreateCommand {
                 if (table.renamedColumns.length > 0) changes.push(`${table.renamedColumns.length} renamed`);
                 if (table.addedIndexes.length > 0) changes.push(`+${table.addedIndexes.length} idx`);
                 if (table.removedIndexes.length > 0) changes.push(`-${table.removedIndexes.length} idx`);
+                if (table.renamedIndexes.length > 0) changes.push(`~${table.renamedIndexes.length} idx name`);
                 if (table.primaryKeyChanged) changes.push('PK changed');
                 this.logger.info(`  ${table.tableName}: ${changes.join(', ')}`);
             }

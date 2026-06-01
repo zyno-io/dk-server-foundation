@@ -91,6 +91,10 @@ export class MySQLGrammar extends Grammar {
         return `DROP INDEX ${this.quote(indexName)} ON ${this.qualifiedTable(tableName)}`;
     }
 
+    renameIndex(tableName: string, from: string, to: string): string {
+        return `ALTER TABLE ${this.qualifiedTable(tableName)} RENAME INDEX ${this.quote(from)} TO ${this.quote(to)}`;
+    }
+
     dropForeignKey(tableName: string, constraintName: string): string {
         return `ALTER TABLE ${this.qualifiedTable(tableName)} DROP FOREIGN KEY ${this.quote(constraintName)}`;
     }

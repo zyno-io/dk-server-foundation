@@ -127,6 +127,13 @@ export class PostgresGrammar extends Grammar {
         return `DROP INDEX ${this.quote(indexName)}`;
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    renameIndex(_tableName: string, from: string, to: string): string {
+        // Index names in PG are schema-qualified, not table-qualified; the new name is bare.
+        const qualifiedFrom = this.pgSchema && this.pgSchema !== 'public' ? `${this.quote(this.pgSchema)}.${this.quote(from)}` : this.quote(from);
+        return `ALTER INDEX ${qualifiedFrom} RENAME TO ${this.quote(to)}`;
+    }
+
     dropForeignKey(tableName: string, constraintName: string): string {
         return `ALTER TABLE ${this.qualifiedTable(tableName)} DROP CONSTRAINT ${this.quote(constraintName)}`;
     }

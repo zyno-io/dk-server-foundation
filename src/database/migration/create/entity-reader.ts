@@ -98,7 +98,8 @@ function readTableSchema(reflection: ReflectionClass<unknown>, tableName: string
             name,
             columns: idx.names,
             unique: idx.options.unique || false,
-            spatial: dialect === 'mysql' ? idx.options.spatial || false : false
+            spatial: dialect === 'mysql' ? idx.options.spatial || false : false,
+            explicitName: !!idx.options.name
         });
     }
 
@@ -305,13 +306,13 @@ function resolveColumnType(type: Type, columnName: string, dialect: Dialect, par
     // Check dialect-specific database annotation
     const dbAnnotation = databaseAnnotation.getDatabase<{ type?: string }>(type, dialect);
     if (dbAnnotation?.type) {
-        return { type: dbAnnotation.type.toLowerCase() };
+        return parseRawSqlType(dbAnnotation.type, dialect);
     }
 
     // Check generic database annotation
     const genericDbAnnotation = databaseAnnotation.getDatabase<{ type?: string }>(type, '*');
     if (genericDbAnnotation?.type) {
-        return { type: genericDbAnnotation.type.toLowerCase() };
+        return parseRawSqlType(genericDbAnnotation.type, dialect);
     }
 
     // Check dksf:length annotation
@@ -339,13 +340,13 @@ function resolveIntersectionType(type: TypeIntersection, columnName: string, dia
     // Priority 1: Check for dialect-specific database annotation on the intersection
     const dbAnnotation = databaseAnnotation.getDatabase<{ type?: string }>(type, dialect);
     if (dbAnnotation?.type) {
-        return { type: dbAnnotation.type.toLowerCase() };
+        return parseRawSqlType(dbAnnotation.type, dialect);
     }
 
     // Priority 2: Check for generic database annotation
     const genericDbAnnotation = databaseAnnotation.getDatabase<{ type?: string }>(type, '*');
     if (genericDbAnnotation?.type) {
-        return { type: genericDbAnnotation.type.toLowerCase() };
+        return parseRawSqlType(genericDbAnnotation.type, dialect);
     }
 
     // Priority 3: dksf:type annotation
@@ -402,6 +403,44 @@ function resolveDksfType(dksfType: string, _type: Type, _dialect: Dialect): Reso
             return { type: 'varchar', size: 20 };
         default:
             return null;
+    }
+}
+
+/**
+ * Parse a raw SQL type string from a `MySQL<{ type: '...' }>` / generic database annotation into a
+ * canonical ResolvedType, so annotations like `'SMALLINT'`, `'TINYINT UNSIGNED'`, `'DECIMAL(10,0)'`,
+ * `'VARCHAR(512)'`, or `'TEXT'` diff correctly against db-reader output. Falls back to the bare
+ * lowercased string for anything that doesn't match (e.g. `'point'`).
+ */
+function parseRawSqlType(raw: string, dialect: Dialect): ResolvedType {
+    const lower = raw.trim().toLowerCase();
+    // `unsigned` is MySQL-only; on PG it has no meaning (db-reader always reports unsigned=false).
+    const unsigned = dialect === 'mysql' && /\bunsigned\b/.test(lower);
+    const base = lower
+        .replace(/\bunsigned\b/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    const m = base.match(/^([a-z]+)\s*(?:\(\s*(\d+)\s*(?:,\s*(\d+)\s*)?\))?$/);
+    if (!m) return { type: base, unsigned };
+
+    const type = normalizeTypeAlias(m[1]);
+    const result: ResolvedType = { type, unsigned };
+    if (m[2] !== undefined) result.size = Number(m[2]);
+    if (m[3] !== undefined) result.scale = Number(m[3]);
+    return result;
+}
+
+function normalizeTypeAlias(type: string): string {
+    switch (type) {
+        case 'integer':
+            return 'int';
+        case 'numeric':
+            return 'decimal';
+        case 'bool':
+            return 'tinyint';
+        default:
+            return type;
     }
 }
 
@@ -477,7 +516,8 @@ function resolvePrimitiveType(type: Type, dialect: Dialect, columnName?: string)
             return { type: 'int' };
 
         case ReflectionKind.boolean:
-            return dialect === 'mysql' ? { type: 'tinyint', size: 1 } : { type: 'boolean' };
+            // Canonical boolean storage on MySQL is TINYINT(1) UNSIGNED.
+            return dialect === 'mysql' ? { type: 'tinyint', size: 1, unsigned: true } : { type: 'boolean' };
 
         case ReflectionKind.bigint:
             return { type: 'bigint' };
@@ -498,7 +538,7 @@ function resolvePrimitiveType(type: Type, dialect: Dialect, columnName?: string)
             if (typeof literal === 'string') return { type: 'varchar', size: 255 };
             if (typeof literal === 'number') return { type: 'int' };
             if (typeof literal === 'boolean') {
-                return dialect === 'mysql' ? { type: 'tinyint', size: 1 } : { type: 'boolean' };
+                return dialect === 'mysql' ? { type: 'tinyint', size: 1, unsigned: true } : { type: 'boolean' };
             }
             return null;
         }

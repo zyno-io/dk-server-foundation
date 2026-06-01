@@ -34,6 +34,7 @@ export abstract class Grammar {
     abstract modifyColumn(tableName: string, col: ColumnSchema): string[];
     abstract renameColumn(tableName: string, from: string, to: string): string;
     abstract dropIndex(tableName: string, indexName: string): string;
+    abstract renameIndex(tableName: string, from: string, to: string): string;
     abstract dropForeignKey(tableName: string, constraintName: string): string;
     abstract addPrimaryKey(tableName: string, columns: string[]): string;
     /** Drop the existing primary key. PG needs the constraint name; defaults to `${table}_pkey`. */

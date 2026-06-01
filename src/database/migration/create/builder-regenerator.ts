@@ -68,6 +68,7 @@ function renderAlterBlock(td: TableDiff, dialect: Dialect): string {
 
     for (const fk of td.removedForeignKeys) innerLines.push(`        t.dropForeign(${quoteStr(fk.name)});`);
     for (const idx of td.removedIndexes) innerLines.push(`        t.dropIndex(${quoteStr(idx.name)});`);
+    for (const r of td.renamedIndexes) innerLines.push(`        t.renameIndex(${quoteStr(r.from)}, ${quoteStr(r.to)});`);
     for (const col of td.removedColumns) innerLines.push(`        t.dropColumn(${quoteStr(col.name)});`);
     for (const r of td.renamedColumns) innerLines.push(`        t.renameColumn(${quoteStr(r.from)}, ${quoteStr(r.to)});`);
 
@@ -146,8 +147,9 @@ function renderPositioning(col: ColumnSchema, entityColumns: ColumnSchema[], add
 function renderColumnLine(col: ColumnSchema, table: TableSchema): string {
     let line = `t.${pickBuilderMethod(col)}`;
 
-    // Modifier order chosen to read naturally
-    if (col.unsigned) line += '.unsigned()';
+    // Modifier order chosen to read naturally.
+    // boolean is rendered via .boolean() (which is TINYINT(1) UNSIGNED) — don't double-emit .unsigned().
+    if (col.unsigned && !(col.type === 'tinyint' && col.size === 1)) line += '.unsigned()';
     if (col.nullable) line += '.nullable()';
     if (col.autoIncrement) line += '.autoIncrement()';
 

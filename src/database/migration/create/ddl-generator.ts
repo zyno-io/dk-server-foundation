@@ -190,6 +190,11 @@ function generateMySQLTableDDL(diff: TableDiff): string[] {
         stmts.push(`ALTER TABLE ${t} DROP INDEX ${q('mysql', idx.name)}`);
     }
 
+    // 2b. Rename indexes (after drops, so a freed-up name can be reused)
+    for (const r of diff.renamedIndexes) {
+        stmts.push(`ALTER TABLE ${t} RENAME INDEX ${q('mysql', r.from)} TO ${q('mysql', r.to)}`);
+    }
+
     // 3. Drop PK if changed (only if there was an existing PK to drop)
     // Track columns that had AUTO_INCREMENT temporarily stripped so we can restore it after ADD PK
     const autoIncStrippedForPKDrop: ColumnSchema[] = [];
@@ -363,6 +368,11 @@ function generatePostgresTableDDL(diff: TableDiff, pgSchema?: string, globalEnum
     // 4. Drop indexes (schema-qualified for non-public schemas)
     for (const idx of diff.removedIndexes) {
         stmts.push(`DROP INDEX ${qTable('postgres', idx.name, pgSchema)}`);
+    }
+
+    // 4b. Rename indexes (after drops, so a freed-up name can be reused)
+    for (const r of diff.renamedIndexes) {
+        stmts.push(`ALTER INDEX ${qTable('postgres', r.from, pgSchema)} RENAME TO ${q('postgres', r.to)}`);
     }
 
     // 5. Drop PK if changed (only if there was an existing PK to drop)

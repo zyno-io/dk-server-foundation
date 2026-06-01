@@ -31,6 +31,8 @@ export interface IndexSchema {
     columns: string[]; // ordered
     unique: boolean;
     spatial: boolean; // MySQL only
+    /** Entity-side only: true if the index name was set explicitly (via `{ name }`) rather than auto-generated. */
+    explicitName?: boolean;
 }
 
 export interface ForeignKeySchema {
@@ -73,6 +75,8 @@ export interface TableDiff {
     reorderedColumns: { name: string; after: string | null }[]; // MySQL only; null = FIRST
     addedIndexes: IndexSchema[];
     removedIndexes: IndexSchema[];
+    /** Indexes whose columns match an entity index but whose DB name differs from the entity's explicit name. */
+    renamedIndexes: { from: string; to: string }[];
     addedForeignKeys: ForeignKeySchema[];
     removedForeignKeys: ForeignKeySchema[];
     primaryKeyChanged: boolean;

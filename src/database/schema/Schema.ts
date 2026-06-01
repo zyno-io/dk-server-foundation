@@ -49,6 +49,9 @@ export class Schema {
         for (const idxName of blueprint.droppedIndexes) {
             await this.db.rawExecute(this.grammar.dropIndex(name, idxName));
         }
+        for (const { from, to } of blueprint.renamedIndexes) {
+            await this.db.rawExecute(this.grammar.renameIndex(name, from, to));
+        }
         if (blueprint.dropsPrimaryKey) {
             await this.db.rawExecute(this.grammar.dropPrimaryKey(name));
         }

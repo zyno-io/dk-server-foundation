@@ -73,6 +73,7 @@ async function compareTable(entityTable: TableSchema, dbTable: TableSchema, dial
         reorderedColumns: [],
         addedIndexes: [],
         removedIndexes: [],
+        renamedIndexes: [],
         addedForeignKeys: [],
         removedForeignKeys: [],
         primaryKeyChanged: false,
@@ -154,9 +155,10 @@ async function compareTable(entityTable: TableSchema, dbTable: TableSchema, dial
     }
 
     // --- Indexes ---
-    const { added: addedIdx, removed: removedIdx } = compareIndexes(entityTable.indexes, dbTable.indexes);
+    const { added: addedIdx, removed: removedIdx, renamed: renamedIdx } = compareIndexes(entityTable.indexes, dbTable.indexes);
     diff.addedIndexes = addedIdx;
     diff.removedIndexes = removedIdx;
+    diff.renamedIndexes = renamedIdx;
 
     // --- Foreign Keys ---
     const { added: addedFK, removed: removedFK } = compareForeignKeys(entityTable.foreignKeys, dbTable.foreignKeys);
@@ -177,6 +179,7 @@ async function compareTable(entityTable: TableSchema, dbTable: TableSchema, dial
         diff.reorderedColumns.length === 0 &&
         diff.addedIndexes.length === 0 &&
         diff.removedIndexes.length === 0 &&
+        diff.renamedIndexes.length === 0 &&
         diff.addedForeignKeys.length === 0 &&
         diff.removedForeignKeys.length === 0 &&
         !diff.primaryKeyChanged &&
@@ -288,7 +291,16 @@ function defaultsMatch(a: ColumnSchema, b: ColumnSchema): boolean {
     if (a.defaultValue === undefined && b.defaultValue === undefined) return true;
     if (a.defaultValue === undefined || b.defaultValue === undefined) return false;
 
-    return String(a.defaultValue) === String(b.defaultValue);
+    const av = String(a.defaultValue);
+    const bv = String(b.defaultValue);
+    if (av === bv) return true;
+
+    // Numeric defaults: '1' and '1.0'/'1.00' are equivalent (MySQL reports decimal defaults with scale).
+    const an = Number(av);
+    const bn = Number(bv);
+    if (av.trim() !== '' && bv.trim() !== '' && !Number.isNaN(an) && !Number.isNaN(bn)) return an === bn;
+
+    return false;
 }
 
 async function detectRenames(
@@ -356,7 +368,10 @@ function detectReorderingMySQL(entityTable: TableSchema, dbTable: TableSchema, d
     return reorders;
 }
 
-function compareIndexes(entityIndexes: IndexSchema[], dbIndexes: IndexSchema[]): { added: IndexSchema[]; removed: IndexSchema[] } {
+function compareIndexes(
+    entityIndexes: IndexSchema[],
+    dbIndexes: IndexSchema[]
+): { added: IndexSchema[]; removed: IndexSchema[]; renamed: { from: string; to: string }[] } {
     // Match by column set + uniqueness + spatial, not by name
     const indexKey = (idx: IndexSchema) => `${idx.columns.join(',')}:${idx.unique}:${idx.spatial}`;
 
@@ -366,7 +381,22 @@ function compareIndexes(entityIndexes: IndexSchema[], dbIndexes: IndexSchema[]):
     const added = entityIndexes.filter(i => !dbKeys.has(indexKey(i)));
     const removed = dbIndexes.filter(i => !entityKeys.has(indexKey(i)));
 
-    return { added, removed };
+    // Name reconciliation: when an entity index sets an explicit name but the column-matched DB
+    // index carries a different name, rename it (instead of leaving the index permanently under a
+    // stale/auto name). Skip when the target name is still held by a DB index we're keeping — that
+    // would collide; the rename only fires once the conflicting index is among `removed`.
+    const removedNames = new Set(removed.map(i => i.name));
+    const keptDbNames = new Set(dbIndexes.filter(i => !removedNames.has(i.name)).map(i => i.name));
+    const renamed: { from: string; to: string }[] = [];
+    for (const e of entityIndexes) {
+        if (!e.explicitName) continue;
+        const dbMatch = dbKeys.get(indexKey(e));
+        if (!dbMatch || dbMatch.name === e.name) continue;
+        if (keptDbNames.has(e.name)) continue; // target name taken by an index we're keeping
+        renamed.push({ from: dbMatch.name, to: e.name });
+    }
+
+    return { added, removed, renamed };
 }
 
 function normalizeFkAction(action: string): string {

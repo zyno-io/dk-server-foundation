@@ -161,10 +161,11 @@ export abstract class BlueprintBase {
     }
 
     boolean(name: string): ColumnDefinition {
+        // Canonical boolean storage on MySQL is TINYINT(1) UNSIGNED (no-op on PG).
         return this.addColumnImpl({
             name,
             type: 'boolean',
-            unsigned: false,
+            unsigned: true,
             nullable: false,
             autoIncrement: false,
             isPrimaryKey: false,

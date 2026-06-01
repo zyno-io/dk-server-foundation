@@ -17,6 +17,7 @@ export class AlterBlueprint extends BlueprintBase {
     public readonly renamedColumns: { from: string; to: string }[] = [];
     public readonly addedIndexes: IndexSchema[] = [];
     public readonly droppedIndexes: string[] = [];
+    public readonly renamedIndexes: { from: string; to: string }[] = [];
     public readonly addedForeignKeys: ForeignKeySchema[] = [];
     public readonly droppedForeignKeys: string[] = [];
     public newPrimaryKey?: string[];
@@ -54,6 +55,12 @@ export class AlterBlueprint extends BlueprintBase {
     /** Alias of dropIndex — same op at the SQL level, kept for readability. */
     dropUnique(name: string): this {
         return this.dropIndex(name);
+    }
+
+    /** Rename an existing index. Runs after index drops so a freed-up name can be reused. */
+    renameIndex(from: string, to: string): this {
+        this.renamedIndexes.push({ from, to });
+        return this;
     }
 
     /** Drop a foreign key constraint by name. */

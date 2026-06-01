@@ -3,6 +3,12 @@ import { MySQL, Type, Validate, ValidatorError } from '@deepkit/type';
 
 export declare type UuidString = string & TypeAnnotation<'dksf:type', 'uuid'>;
 
+/**
+ * Unsigned integer column. Plain `number` maps to a signed INT; use this when the column is
+ * `INT UNSIGNED` (MySQL). On PostgreSQL it is an ordinary INT (no unsigned concept).
+ */
+export type UnsignedNumber = number & MySQL<{ type: 'int unsigned' }>;
+
 export class Coordinate {
     x!: number;
     y!: number;
