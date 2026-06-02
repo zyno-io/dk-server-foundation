@@ -10,7 +10,7 @@ export function generateBuilderMigrationFile(tables: TableSchema[]): string {
 }
 
 /**
- * Render a TypeScript migration file from a SchemaDiff. Used by migration:create to emit
+ * Render a TypeScript migration file from a SchemaDiff. Used by migrate:create to emit
  * portable builder-based migrations.
  *
  * Order: drop removed tables → create added tables → alter modified tables. Within an alter:

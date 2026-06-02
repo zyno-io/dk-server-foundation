@@ -172,7 +172,7 @@ Located in `src/database/schema/`. A Laravel-style fluent schema builder that em
 
 **Architecture:**
 
-- `Grammar` (abstract) + `MySQLGrammar` / `PostgresGrammar` — render canonical `ColumnSchema` / `IndexSchema` / `ForeignKeySchema` / `TableSchema` (from `migration/create/schema-model.ts`) into dialect-specific SQL. They own the *only* place SQL is emitted.
+- `Grammar` (abstract) + `MySQLGrammar` / `PostgresGrammar` — render canonical `ColumnSchema` / `IndexSchema` / `ForeignKeySchema` / `TableSchema` (from `migration/create/schema-model.ts`) into dialect-specific SQL. They own the _only_ place SQL is emitted.
 - `Blueprint` — per-table collector. Each `t.string(...)`, `t.foreign(...)`, etc. records intent against the canonical model. Knows the dialect via the Grammar to translate logical types like `t.boolean()`, `t.dateTime()`, `t.jsonb()`, `t.uuid()` to the right canonical type per dialect.
 - `ColumnDefinition` / `ForeignKeyBuilder` — fluent modifiers (`.nullable()`, `.references()`, etc.).
 - `Schema` — the `db.schema` entry point. Owns the per-migration FK deferral queue and PG enum-type dedup registry. Auto-flushed by the migration runner.
@@ -181,9 +181,9 @@ Located in `src/database/schema/`. A Laravel-style fluent schema builder that em
 
 **Wiring:** `BaseDatabase.schema` is a lazy getter that picks the Grammar from `getDialect(adapter)` and reads `PG_SCHEMA` from app config. Uses `require()` instead of top-level import to break the `Schema → BaseDatabase` cycle.
 
-**`migration:reset` is built on this builder.** `MigrationResetCommand` reads entity schema, then uses `builder-regenerator.ts` to emit a builder-based migration source file (rather than raw SQL). The regenerator is the inverse of the Blueprint — `TableSchema` → fluent builder source.
+**`migrate:reset` is built on this builder.** `MigrationResetCommand` reads entity schema, then uses `builder-regenerator.ts` to emit a builder-based migration source file (rather than raw SQL). The regenerator is the inverse of the Blueprint — `TableSchema` → fluent builder source.
 
-**`migration:create` defaults to builder output too.** Same regenerator, but consuming `SchemaDiff` via `generateBuilderMigrationFromDiff(diff)`. The legacy `--raw` flag falls back to the SQL emitter (`ddl-generator.ts`) for one-off scripts. Both code paths now share the same Grammar — `ddl-generator.ts` delegates every emit (`createTable`, `createIndex`, `addForeignKey`, `createEnumType`, `mysqlColumnDef`, `pgColumnDef`, `q`/`qTable`/`qType`) to MySQLGrammar/PostgresGrammar via thin wrappers.
+**`migrate:create` defaults to builder output too.** Same regenerator, but consuming `SchemaDiff` via `generateBuilderMigrationFromDiff(diff)`. The legacy `--raw` flag falls back to the SQL emitter (`ddl-generator.ts`) for one-off scripts. Both code paths now share the same Grammar — `ddl-generator.ts` delegates every emit (`createTable`, `createIndex`, `addForeignKey`, `createEnumType`, `mysqlColumnDef`, `pgColumnDef`, `q`/`qTable`/`qType`) to MySQLGrammar/PostgresGrammar via thin wrappers.
 
 **Schema introspection** (`db.schema.hasTable / hasColumn / hasIndex`) lets migrations be idempotent. Implementation queries `information_schema` (MySQL) or `pg_indexes` (PG). See `Schema.ts`.
 
@@ -308,7 +308,7 @@ import { runMigrations } from './database';
 await runMigrations();
 
 // At runtime, migrations are read from getMigrationsDir() (src/ or dist/ depending on context)
-// migration:create and migration:reset always write to getSourceMigrationsDir() (src/migrations/)
+// migrate:create and migrate:reset always write to getSourceMigrationsDir() (src/migrations/)
 // Migration state is tracked in the database's migration table
 ```
 

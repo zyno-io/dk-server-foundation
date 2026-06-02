@@ -10,7 +10,7 @@ import { generateBuilderMigrationFile } from './create/builder-regenerator';
 import { readEntitiesSchema } from './create/entity-reader';
 import { getSourceMigrationsDir } from './helpers';
 
-@cli.controller('migration:reset')
+@cli.controller('migrate:reset')
 export class MigrationResetCommand {
     private logger = createLogger('MigrationReset');
     private migrationsDir = getSourceMigrationsDir();

@@ -481,14 +481,14 @@ Inline FKs declared via `t.foreign(...)` are deferred and emitted as `ALTER TABL
 
 ### Generating Migrations
 
-The `migration:create` command diffs entity definitions against the live database and generates a migration file:
+The `migrate:create` command diffs entity definitions against the live database and generates a migration file:
 
 ```bash
 # Interactive mode (prompts for column renames)
-node app.js migration:create
+node app.js migrate:create
 
 # Non-interactive (CI-safe, treats ambiguous changes as drop+add)
-node app.js migration:create --non-interactive
+node app.js migrate:create --non-interactive
 ```
 
 It detects: table creation/removal, column additions/removals/modifications/renames, index and foreign key changes, primary key changes, and PostgreSQL enum type management. Both MySQL and PostgreSQL are supported.
@@ -514,7 +514,7 @@ export default createMigration(async db => {
 
 ```bash
 # Via CLI
-node app.js migration:run
+node app.js migrate:run
 
 # Programmatically
 import { runMigrations } from '@zyno-io/dk-server-foundation';
@@ -526,13 +526,13 @@ await runMigrations();
 Removes all existing migrations and generates a single base migration from entity definitions:
 
 ```bash
-node app.js migration:reset
+node app.js migrate:reset
 ```
 
 ### Character Set Standardization
 
 ```bash
-node app.js migration:charset [charset] [collation]
+node app.js migrate:charset [charset] [collation]
 # Defaults: utf8mb4, utf8mb4_0900_ai_ci
 ```
 

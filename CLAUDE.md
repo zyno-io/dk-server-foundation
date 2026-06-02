@@ -168,14 +168,14 @@ Database migrations (src/database/migration/). See `docs/content/database.md` fo
 
 ### Migration Commands
 
-- `migration:create` — Compares entity definitions against the live database and generates a migration file with the DDL to bring the DB in sync. Supports `--non-interactive` flag for CI. Both MySQL and PostgreSQL.
-- `migration:run` — Executes all pending migrations from the migrations directory
-- `migration:reset` — Removes all migrations and regenerates a base migration from entity definitions
-- `migration:charset` — Standardizes character set/collation to `utf8mb4_0900_ai_ci` (MySQL-only)
+- `migrate:create` — Compares entity definitions against the live database and generates a migration file with the DDL to bring the DB in sync. Supports `--non-interactive` flag for CI. Both MySQL and PostgreSQL.
+- `migrate:run` — Executes all pending migrations from the migrations directory
+- `migrate:reset` — Removes all migrations and regenerates a base migration from entity definitions
+- `migrate:charset` — Standardizes character set/collation to `utf8mb4_0900_ai_ci` (MySQL-only)
 
-### Schema Migration Generator (`migration:create`)
+### Schema Migration Generator (`migrate:create`)
 
-The `migration:create` command (src/database/migration/create/) is a custom implementation that:
+The `migrate:create` command (src/database/migration/create/) is a custom implementation that:
 
 1. **Reads entity schema** via Deepkit's `ReflectionClass` — resolves all type annotations to dialect-specific column types
 2. **Reads database schema** via `information_schema` queries — introspects columns, indexes, foreign keys, and enum types

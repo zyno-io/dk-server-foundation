@@ -14,7 +14,7 @@ import { generateMigrationFile, writeMigrationFile } from './file-generator';
 import { promptMigrationDescription, setNonInteractive } from './prompt';
 import { INTERNAL_TABLES } from './schema-model';
 
-@cli.controller('migration:create')
+@cli.controller('migrate:create')
 export class MigrationCreateCommand {
     private logger = createLogger('MigrationCreate');
 

@@ -121,7 +121,7 @@ export function createMySQLDatabase(
 
             // Mark the adapter so acquireSessionLock can lazy-init the _locks table on first use.
             // Constructor-time fire-and-forget would race with pool teardown for short-lived CLI
-            // commands like migration:reset that don't issue any DB work.
+            // commands like migrate:reset that don't issue any DB work.
             if (enableLocksTable) {
                 (adapter as unknown as { _enableLocksTable: boolean })._enableLocksTable = true;
             }

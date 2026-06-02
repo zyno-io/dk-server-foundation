@@ -71,7 +71,7 @@ class MigIndexOptionsEntity extends ActiveRecord {
 
 const indexTestEntities = [MigIndexOptionsEntity];
 
-describe('migration:create integration', () => {
+describe('migrate:create integration', () => {
     forEachAdapter(({ createFacade }) => {
         const tf = createFacade({ entities: testEntities });
         let dialect: Dialect;

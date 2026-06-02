@@ -79,7 +79,7 @@ function readTableSchema(reflection: ReflectionClass<unknown>, tableName: string
             if (col.isPrimaryKey) pkColumns.push(col.name);
         } else {
             skippedColumns.add(prop.name);
-            console.warn(`migration:create: Skipping column '${prop.name}' in '${tableName}' — unsupported type`);
+            console.warn(`migrate:create: Skipping column '${prop.name}' in '${tableName}' — unsupported type`);
         }
     }
 
@@ -174,7 +174,7 @@ function readReferenceColumn(
     const refPkProps = refClass.getProperties().filter(p => p.isPrimaryKey());
     if (refPkProps.length !== 1) {
         console.warn(
-            `migration:create: Skipping reference '${prop.name}' in '${tableName ?? '?'}' — ` +
+            `migrate:create: Skipping reference '${prop.name}' in '${tableName ?? '?'}' — ` +
                 `referenced entity '${refClass.name}' has ${refPkProps.length === 0 ? 'no' : 'composite'} primary key (unsupported)`
         );
         return null;
@@ -278,7 +278,7 @@ function resolveColumnType(type: Type, columnName: string, dialect: Dialect, par
         // Mixed/unsupported union -- treat as the first member (lossy; warn)
         if (nonNull.length > 0) {
             console.warn(
-                `migration:create: Column '${columnName}'${parentTableName ? ` in '${parentTableName}'` : ''} ` +
+                `migrate:create: Column '${columnName}'${parentTableName ? ` in '${parentTableName}'` : ''} ` +
                     `has a union type with ${nonNull.length} non-null members — using the first member only`
             );
             return resolveColumnType(nonNull[0], columnName, dialect, parentTableName);

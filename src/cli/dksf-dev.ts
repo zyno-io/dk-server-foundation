@@ -307,13 +307,7 @@ function cmdMigrate(subcmd: string, args: string[]): void {
     }
 
     const deepkitCmd =
-        subcmd === 'create'
-            ? 'migration:create'
-            : subcmd === 'reset'
-              ? 'migration:reset'
-              : subcmd === 'charset'
-                ? 'migration:charset'
-                : 'migration:run';
+        subcmd === 'create' ? 'migrate:create' : subcmd === 'reset' ? 'migrate:reset' : subcmd === 'charset' ? 'migrate:charset' : 'migrate:run';
     const childArgs = [deepkitCmd];
     if (subcmd === 'create' || subcmd === 'charset') {
         const remaining = args.filter(a => a !== '--debug');

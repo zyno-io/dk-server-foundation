@@ -42,12 +42,12 @@ Arguments:
 
 ### Migration Commands
 
-#### `migration:run`
+#### `migrate:run`
 
 Run all pending migrations:
 
 ```bash
-node app.js migration:run
+node app.js migrate:run
 ```
 
 Behavior:
@@ -58,19 +58,19 @@ Behavior:
 4. Records execution time in `_migrations` table
 5. Clears repeatable worker jobs (if workers enabled)
 
-#### `migration:create`
+#### `migrate:create`
 
 Generate a migration by comparing entity definitions against the live database schema:
 
 ```bash
 # Interactive mode (prompts for column renames)
-node app.js migration:create
+node app.js migrate:create
 
 # Non-interactive (CI-safe)
-node app.js migration:create --non-interactive
+node app.js migrate:create --non-interactive
 
 # Emit dialect-specific raw SQL instead of dialect-portable schema-builder calls
-node app.js migration:create --raw
+node app.js migrate:create --raw
 ```
 
 Behavior:
@@ -84,29 +84,29 @@ Behavior:
 
 **Non-interactive mode**: Column renames cannot be detected without user input. Ambiguous changes (columns simultaneously added and removed on the same table) are treated as separate DROP/ADD operations, which may cause data loss. A warning is printed when this occurs.
 
-#### `migration:reset`
+#### `migrate:reset`
 
 Generate a single base migration from entity definitions:
 
 ```bash
-node app.js migration:reset
+node app.js migrate:reset
 ```
 
 Behavior:
 
 1. Creates the `src/migrations/` directory if missing
 2. Removes all existing `.ts` migration files
-3. Reads entity schema from code definitions (using the same entity-reader as `migration:create`)
-4. Generates DDL by treating all entity tables as new (using the same DDL generator as `migration:create`)
+3. Reads entity schema from code definitions (using the same entity-reader as `migrate:create`)
+4. Generates DDL by treating all entity tables as new (using the same DDL generator as `migrate:create`)
 5. Writes `00000000_000000_base.ts` with all CREATE statements
 6. Skips internal tables (prefixed with `_`)
 
-#### `migration:charset`
+#### `migrate:charset`
 
 Standardize database character set and collation:
 
 ```bash
-node app.js migration:charset [charset] [collation]
+node app.js migrate:charset [charset] [collation]
 ```
 
 Defaults to `utf8mb4` / `utf8mb4_0900_ai_ci`.
@@ -251,7 +251,7 @@ dksf-dev migrate --debug
 
 If a `dksf-dev run` process is already running (detected via the coordination state file), the clean+build step is skipped. Otherwise, a full clean+build is performed first.
 
-Runs: `node --inspect=9226 . migration:run` (or `--inspect-brk=9226` with `--debug`).
+Runs: `node --inspect=9226 . migrate:run` (or `--inspect-brk=9226` with `--debug`).
 
 #### `dksf-dev migrate:create`
 
@@ -263,7 +263,7 @@ dksf-dev migrate:create --debug
 dksf-dev migrate:create --non-interactive
 ```
 
-Builds (if needed), then runs `node --inspect=9226 . migration:create`. Extra arguments (e.g., `--non-interactive`) are passed through.
+Builds (if needed), then runs `node --inspect=9226 . migrate:create`. Extra arguments (e.g., `--non-interactive`) are passed through.
 
 #### `dksf-dev migrate:reset`
 
@@ -274,7 +274,7 @@ dksf-dev migrate:reset
 dksf-dev migrate:reset --debug
 ```
 
-Builds (if needed), then runs `node --inspect=9226 . migration:reset`.
+Builds (if needed), then runs `node --inspect=9226 . migrate:reset`.
 
 #### `dksf-dev migrate:charset`
 
@@ -286,7 +286,7 @@ dksf-dev migrate:charset --debug
 dksf-dev migrate:charset utf8mb4 utf8mb4_0900_ai_ci
 ```
 
-Builds (if needed), then runs `node --inspect=9226 . migration:charset`. Extra arguments (charset, collation) are passed through.
+Builds (if needed), then runs `node --inspect=9226 . migrate:charset`. Extra arguments (charset, collation) are passed through.
 
 #### `dksf-dev test`
 

@@ -160,16 +160,16 @@ Generate migrations by diffing entity definitions against the live database:
 
 ```bash
 # Interactive mode (prompts for column renames)
-ts-node app.ts migration:create
+ts-node app.ts migrate:create
 
 # Non-interactive (CI-safe, treats ambiguous changes as drop+add)
-ts-node app.ts migration:create --non-interactive
+ts-node app.ts migrate:create --non-interactive
 
 # Run pending migrations
-ts-node app.ts migration:run
+ts-node app.ts migrate:run
 ```
 
-The `migration:create` command reads entity metadata via Deepkit reflection, introspects the database schema, and generates dialect-appropriate DDL covering: table creation/removal, column additions/removals/modifications/renames, index and foreign key changes, primary key changes, and PostgreSQL enum type management. Migration files use the `createMigration()` format:
+The `migrate:create` command reads entity metadata via Deepkit reflection, introspects the database schema, and generates dialect-appropriate DDL covering: table creation/removal, column additions/removals/modifications/renames, index and foreign key changes, primary key changes, and PostgreSQL enum type management. Migration files use the `createMigration()` format:
 
 ```typescript
 import { createMigration } from '@zyno-io/dk-server-foundation';
@@ -413,10 +413,10 @@ logger.error('Failed to process', err);
 | `provider:invoke <provider> <method> [args]` | Invoke any provider method from CLI                      |
 | `worker:start`                               | Start the job runner (with leader-elected recorder)      |
 | `worker:queue <jobName> [data]`              | Queue a job by name                                      |
-| `migration:create`                           | Generate migration from entity/DB schema diff            |
-| `migration:run`                              | Run pending database migrations                          |
-| `migration:reset`                            | Reset migrations to a single base migration              |
-| `migration:charset [charset] [collation]`    | Standardize database character set                       |
+| `migrate:create`                             | Generate migration from entity/DB schema diff            |
+| `migrate:run`                                | Run pending database migrations                          |
+| `migrate:reset`                              | Reset migrations to a single base migration              |
+| `migrate:charset [charset] [collation]`      | Standardize database character set                       |
 
 ## DevConsole
 

@@ -40,7 +40,7 @@ function compileMigration(source: string): (db: BaseDatabase) => Promise<void> {
     return new AsyncFunction('db', body);
 }
 
-describe('smoke: builder round-trip via migration:reset → run → no diff', () => {
+describe('smoke: builder round-trip via migrate:reset → run → no diff', () => {
     forEachAdapter(({ createFacade, type }) => {
         const tf = createFacade({ entities: [SmokeOrg, SmokeUser] });
 

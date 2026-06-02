@@ -143,7 +143,7 @@ class VerificationCode {
 
 ### `OnUpdate<T>`
 
-MySQL `ON UPDATE` column expression annotation. Used by `migration:create` to generate and detect `ON UPDATE` clauses:
+MySQL `ON UPDATE` column expression annotation. Used by `migrate:create` to generate and detect `ON UPDATE` clauses:
 
 ```typescript
 import { OnUpdate } from '@zyno-io/dk-server-foundation';

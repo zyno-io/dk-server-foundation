@@ -12,7 +12,7 @@ import { getDialect, tableExistsSql } from '../dialect';
 import { getMigrationsDir } from './helpers';
 import { MigrationEntity } from './migration.entity';
 
-@cli.controller('migration:run')
+@cli.controller('migrate:run')
 export class MigrationRunCommand {
     private logger = createLogger('Migrator');
     private migrationsDir = getMigrationsDir();

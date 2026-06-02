@@ -38,7 +38,7 @@ export async function standardizeDbCollation(db: BaseDatabase, options?: ICollat
     }
 }
 
-@cli.controller('migration:charset')
+@cli.controller('migrate:charset')
 export class MigrationCharactersCommand {
     constructor(private dbProvider: DBProvider) {}
 
