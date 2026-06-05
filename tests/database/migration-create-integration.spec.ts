@@ -57,6 +57,20 @@ class MigUnionTypesEntity extends ActiveRecord {
 
 const unionTestEntities = [MigUnionTypesEntity];
 
+// --- `any` type test entity ---
+
+@entity.name('mig_any_types')
+class MigAnyTypesEntity extends ActiveRecord {
+    id!: number & AutoIncrement & PrimaryKey;
+    // A bare `any` field can't cleanly express `T | null` in Deepkit, so the reader resolves it to a nullable JSON column.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    metadata!: any;
+    // A structured object literal is also JSON, but must stay NOT NULL — only bare `any` is forced nullable.
+    config!: { foo: string };
+}
+
+const anyTestEntities = [MigAnyTypesEntity];
+
 // --- Index options test entities ---
 
 @(entity.name('mig_index_options').index(['groupId', 'name'], { unique: true }).index(['groupId', 'priority'], { name: 'idx_custom_name' }))
@@ -231,6 +245,39 @@ describe('migrate:create integration', () => {
                 assert.equal(col.type, 'enum');
                 assert.equal(col.nullable, true);
                 assert.deepEqual(col.enumValues, ['enabled', 'disabled']);
+            });
+        });
+
+        describe('entity reader — any type', () => {
+            const af = createFacade({ entities: anyTestEntities });
+
+            before(
+                async () => {
+                    await af.start();
+                },
+                { timeout: 10_000 }
+            );
+            after(() => af.stop(), { timeout: 10_000 });
+
+            it('should resolve a bare `any` field as a nullable JSON column', () => {
+                const db = af.getDb();
+                const entitySchema = readEntitiesSchema(db, dialect);
+                const tbl = entitySchema.get('mig_any_types')!;
+                assert.ok(tbl, 'mig_any_types table should exist');
+
+                const col = tbl.columns.find(c => c.name === 'metadata')!;
+                assert.equal(col.type, dialect === 'mysql' ? 'json' : 'jsonb');
+                assert.equal(col.nullable, true, '`any` field should be nullable');
+            });
+
+            it('should keep a structured object-literal JSON column NOT NULL', () => {
+                const db = af.getDb();
+                const entitySchema = readEntitiesSchema(db, dialect);
+                const tbl = entitySchema.get('mig_any_types')!;
+
+                const col = tbl.columns.find(c => c.name === 'config')!;
+                assert.equal(col.type, dialect === 'mysql' ? 'json' : 'jsonb');
+                assert.equal(col.nullable, false, 'only bare `any` is forced nullable, not object literals');
             });
         });
 

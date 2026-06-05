@@ -123,7 +123,7 @@ function readColumn(
         size: resolved.size,
         scale: resolved.scale,
         unsigned: resolved.unsigned || false,
-        nullable: prop.isOptional() || prop.isNullable(),
+        nullable: prop.isOptional() || prop.isNullable() || resolved.nullable === true,
         autoIncrement: prop.isAutoIncrement(),
         isPrimaryKey: prop.isPrimaryKey(),
         defaultValue: resolved.defaultValue,
@@ -239,6 +239,8 @@ interface ResolvedType {
     defaultExpression?: string;
     enumValues?: string[];
     enumTypeName?: string;
+    /** Force the column nullable regardless of the prop's declared nullability (e.g. a bare `any` → JSON). */
+    nullable?: boolean;
 }
 
 function resolveColumnType(type: Type, columnName: string, dialect: Dialect, parentTableName?: string): ResolvedType | null {
@@ -531,7 +533,11 @@ function resolvePrimitiveType(type: Type, dialect: Dialect, columnName?: string)
             return dialect === 'mysql' ? { type: 'json' } : { type: 'jsonb' };
 
         case ReflectionKind.any:
-            return dialect === 'mysql' ? { type: 'json' } : { type: 'jsonb' };
+            // A bare `any` can already hold null/undefined and can't cleanly express `T | null` in
+            // Deepkit, so resolve it to a *nullable* JSON column. This also sidesteps the fact that
+            // JSON columns can't carry a literal DEFAULT and can't be tightened to NOT NULL once
+            // they hold NULL rows.
+            return dialect === 'mysql' ? { type: 'json', nullable: true } : { type: 'jsonb', nullable: true };
 
         case ReflectionKind.literal: {
             // literal string → varchar, literal number → int, etc.

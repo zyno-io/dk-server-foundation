@@ -493,6 +493,8 @@ node app.js migrate:create --non-interactive
 
 It detects: table creation/removal, column additions/removals/modifications/renames, index and foreign key changes, primary key changes, and PostgreSQL enum type management. Both MySQL and PostgreSQL are supported.
 
+**Type resolution note:** a bare `any` entity field resolves to a **nullable** JSON (MySQL) / JSONB (PostgreSQL) column. Because `any` already admits `null`/`undefined` and can't cleanly express `T | null` in Deepkit, the generated column is nullable — which also avoids MySQL rejecting a later `NOT NULL` tightening on a JSON column that already holds NULL rows. Structured object-literal/array fields still map to JSON but follow their declared nullability (use `field?:` or `field: T | null` to make them nullable).
+
 ### Writing Migrations Manually
 
 ```typescript
