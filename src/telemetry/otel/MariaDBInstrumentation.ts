@@ -95,10 +95,22 @@ export class MariaDBInstrumentation extends InstrumentationBase {
                 'mariadb',
                 ['3.*'],
                 moduleExports => {
-                    // ESM namespace objects are sealed (non-configurable, non-writable).
-                    // Create a mutable shallow copy so we can patch the exports.
-                    if (!Object.isExtensible(moduleExports)) {
-                        moduleExports = { ...moduleExports };
+                    // Some builds expose the factory functions as props we can neither reassign nor
+                    // redefine in place: ESM namespaces are sealed (non-configurable, non-writable),
+                    // and mariadb 3.5.3 exposes createConnection/createPool/createPoolCluster as
+                    // getter-only, non-configurable props on an otherwise-extensible object. In those
+                    // cases patch onto a prototype-linked copy — the wrapped functions become own
+                    // writable props that shadow the originals, while everything else (version,
+                    // SqlError, defaultOptions, …) still delegates to the real exports.
+                    const factoryNames = ['createConnection', 'createPool', 'createPoolCluster'] as const;
+                    const needsCopy =
+                        !Object.isExtensible(moduleExports) ||
+                        factoryNames.some(name => {
+                            const d = Object.getOwnPropertyDescriptor(moduleExports, name);
+                            return !!d && !d.configurable && !d.writable && !d.set;
+                        });
+                    if (needsCopy) {
+                        moduleExports = Object.create(moduleExports) as typeof mariadbTypes;
                     }
 
                     if (isWrapped(moduleExports.createConnection)) {
