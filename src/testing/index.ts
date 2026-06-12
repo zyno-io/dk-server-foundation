@@ -8,7 +8,7 @@ import { SQLDatabaseAdapter } from '@deepkit/sql';
 
 import { BaseAppConfig, createApp, CreateAppOptions } from '../app';
 import { globalState } from '../app/state';
-import { runMigrations } from '../database';
+import { ensureMysqlLocksTable, runMigrations } from '../database';
 import { sleepMs } from '../helpers';
 import { defineEntityFixtures, loadEntityFixtures, prepareEntityFixtures } from './fixtures';
 import { installStandardHooks, makeMockRequest, resetSrcModuleCache } from './requests';
@@ -312,6 +312,17 @@ export class TestingFacade<A extends RootModuleDefinition = RootModuleDefinition
         const db = databases[0];
         const adapter = db.adapter as SQLDatabaseAdapter;
         const pool = adapter.connectionPool;
+
+        // Provision the `_locks` table (and prime its init cache) BEFORE the wrapping
+        // transaction starts. acquireSessionLock() creates `_locks` lazily via CREATE TABLE
+        // on first use; in MySQL that DDL forces an implicit COMMIT. Normally it runs on its
+        // own pooled connection (harmless), but under savepoint isolation the pool is hijacked
+        // to a single held connection — so that implicit commit would end the wrapping
+        // transaction and destroy every SAVEPOINT (including after_seed), turning the next
+        // resource-locking request into a 500 and every later test's resetToSeed() into a
+        // "SAVEPOINT does not exist" failure. Doing it here, before the pool is hijacked, keeps
+        // the in-test lock path DDL-free. No-op unless the DB opted in via enableLocksTable.
+        await ensureMysqlLocksTable(adapter);
 
         // Get a connection and start a wrapping transaction
         const conn = await pool.getConnection();

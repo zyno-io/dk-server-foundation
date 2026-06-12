@@ -34,7 +34,7 @@ DatabaseSession.prototype.addPostCommitHook = function (hook: () => Promise<void
 
 type LocksAdapterState = SQLDatabaseAdapter & { _enableLocksTable?: boolean; _locksTableInit?: Promise<void> };
 
-async function ensureMysqlLocksTable(adapter: SQLDatabaseAdapter): Promise<void> {
+export async function ensureMysqlLocksTable(adapter: SQLDatabaseAdapter): Promise<void> {
     const a = adapter as LocksAdapterState;
     if (!a._enableLocksTable) return; // creator opted out
     if (a._locksTableInit) {
