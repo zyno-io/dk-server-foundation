@@ -1,3 +1,4 @@
+import { HttpBadRequestError } from '@deepkit/http';
 import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
 import { describe, it, before, after, afterEach } from 'node:test';
@@ -316,6 +317,38 @@ describe('MeshSrpcServer', () => {
         assert.notStrictEqual(result, 'resolved');
         assert.match((result as Error).message, /Connection failed: disconnect/);
         assert.strictEqual(client.isConnected, false);
+    });
+
+    it('rejects WebSocket upgrades with the HttpError thrown by client authorization', async () => {
+        const key = `srpc-${++keyCounter}`;
+        const server = createServer(key);
+        server.setClientAuthorizer(async () => {
+            throw new HttpBadRequestError('Invalid SRPC auth metadata');
+        });
+
+        const ws = new WebSocket(createRawWsUrl(`/mesh-srpc-test-${key}`, 'client-http-error'));
+        const rejection = await new Promise<{ statusCode?: number; statusMessage?: string }>((resolve, reject) => {
+            const timeout = setTimeout(() => reject(new Error('Expected WebSocket upgrade rejection')), 5000);
+            ws.once('unexpected-response', (_req, response) => {
+                clearTimeout(timeout);
+                response.resume();
+                resolve({ statusCode: response.statusCode, statusMessage: response.statusMessage });
+            });
+            ws.once('open', () => {
+                clearTimeout(timeout);
+                reject(new Error('WebSocket upgrade should have been rejected'));
+            });
+            ws.once('error', err => {
+                clearTimeout(timeout);
+                reject(err);
+            });
+        });
+
+        assert.deepStrictEqual(rejection, {
+            statusCode: 400,
+            statusMessage: 'Invalid SRPC auth metadata'
+        });
+        assert.strictEqual(server.streamsById.size, 0);
     });
 
     it('async connection handlers can invoke after the initial ping without delaying connect()', async () => {

@@ -1,4 +1,5 @@
 import { ApplicationServer } from '@deepkit/framework';
+import { HttpError } from '@deepkit/http';
 import { ScopedLogger } from '@deepkit/logger';
 import { uuid } from '@deepkit/type';
 import { createHmac, timingSafeEqual } from 'crypto';
@@ -175,6 +176,17 @@ export class SrpcServer<
                 cb(true);
             },
             err => {
+                if (err instanceof HttpError) {
+                    this.logger.warn('Client validation failed with HTTP error', {
+                        statusCode: err.httpCode,
+                        message: err.message,
+                        clientId,
+                        clientStreamId
+                    });
+                    // eslint-disable-next-line promise/no-callback-in-promise
+                    return cb(false, err.httpCode, err.message);
+                }
+
                 this.logger.error('Error validating client auth', err, { clientId, clientStreamId });
                 // eslint-disable-next-line promise/no-callback-in-promise
                 cb(false, 500, 'Error during authentication');
