@@ -1,7 +1,7 @@
 import { ClassType, getClassName } from '@deepkit/core';
-import { MySQLConnection, MySQLDatabaseAdapter as BaseMySQLDatabaseAdapter } from '@deepkit/mysql';
-import { Database, DatabaseSession } from '@deepkit/orm';
-import { isNonUndefined } from '@deepkit/sql';
+import { MySQLConnection, MySQLDatabaseAdapter as BaseMySQLDatabaseAdapter, MySQLPersistence as BaseMySQLPersistence } from '@deepkit/mysql';
+import { Database, DatabasePersistenceChangeSet, DatabaseSession, OrmEntity } from '@deepkit/orm';
+import { isNonUndefined, PreparedEntity, SQLConnection, SQLPersistence } from '@deepkit/sql';
 import { databaseAnnotation, ReflectionKind, Type } from '@deepkit/type';
 import { PoolConfig } from 'mariadb';
 
@@ -9,6 +9,7 @@ import { Coordinate } from '.';
 import { getAppConfig } from '../app/resolver';
 import { globalState } from '../app/state';
 import { BaseDatabase } from './common';
+import { batchUpdateWithRegularUpdateStatements } from './regular-update';
 
 export type MySQLDatabaseSession = DatabaseSession<MySQLDatabaseAdapter>;
 
@@ -20,7 +21,26 @@ MySQLConnection.prototype.run = async function (sql: string, params: any[] = [])
     return this.lastExecResult?.[0] as any;
 };
 
+class RegularUpdateMySQLPersistence extends BaseMySQLPersistence {
+    override async batchUpdate<T extends OrmEntity>(entity: PreparedEntity, changeSets: DatabasePersistenceChangeSet<T>[]): Promise<void> {
+        await batchUpdateWithRegularUpdateStatements(
+            {
+                platform: this.platform,
+                getConnection: () => this.getConnection() as unknown as Promise<SQLConnection>,
+                hasActiveTransaction: () => this.session.hasTransaction(),
+                handleSpecificError: error => this.handleSpecificError(error)
+            },
+            entity,
+            changeSets
+        );
+    }
+}
+
 export class MySQLDatabaseAdapter extends BaseMySQLDatabaseAdapter {
+    override createPersistence(session: DatabaseSession<this>): SQLPersistence {
+        return new RegularUpdateMySQLPersistence(this.platform, this.connectionPool, session);
+    }
+
     registerTransformations() {
         // any
         this.platform.serializer.deserializeRegistry.register(ReflectionKind.any, (_type, state) => {

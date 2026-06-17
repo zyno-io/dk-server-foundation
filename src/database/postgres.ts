@@ -1,13 +1,18 @@
 import { ClassType } from '@deepkit/core';
-import { Database, DatabaseSession } from '@deepkit/orm';
-import { PostgresConnection, PostgresDatabaseAdapter as BasePostgresDatabaseAdapter } from '@deepkit/postgres';
-import { isNonUndefined } from '@deepkit/sql';
+import { Database, DatabasePersistenceChangeSet, DatabaseSession, OrmEntity } from '@deepkit/orm';
+import {
+    PostgresConnection,
+    PostgresDatabaseAdapter as BasePostgresDatabaseAdapter,
+    PostgresPersistence as BasePostgresPersistence
+} from '@deepkit/postgres';
+import { isNonUndefined, PreparedEntity, SQLConnection, SQLPersistence } from '@deepkit/sql';
 import { ReflectionKind, Type } from '@deepkit/type';
 import { PoolConfig } from 'pg';
 
 import { getAppConfig } from '../app/resolver';
 import { globalState } from '../app/state';
 import { BaseDatabase } from './common';
+import { batchUpdateWithRegularUpdateStatements } from './regular-update';
 
 export type PostgresDatabaseSession = DatabaseSession<PostgresDatabaseAdapter>;
 
@@ -19,7 +24,26 @@ PostgresConnection.prototype.run = async function (sql: string, params: any[] = 
     return { affectedRows: (this as any).changes ?? 0, insertId: 0 } as any;
 };
 
+class RegularUpdatePostgresPersistence extends BasePostgresPersistence {
+    override async batchUpdate<T extends OrmEntity>(entity: PreparedEntity, changeSets: DatabasePersistenceChangeSet<T>[]): Promise<void> {
+        await batchUpdateWithRegularUpdateStatements(
+            {
+                platform: this.platform,
+                getConnection: () => this.getConnection() as unknown as Promise<SQLConnection>,
+                hasActiveTransaction: () => this.session.hasTransaction(),
+                handleSpecificError: error => this.handleSpecificError(error)
+            },
+            entity,
+            changeSets
+        );
+    }
+}
+
 export class PostgresDatabaseAdapter extends BasePostgresDatabaseAdapter {
+    override createPersistence(session: DatabaseSession<this>): SQLPersistence {
+        return new RegularUpdatePostgresPersistence(this.platform, this.connectionPool, session);
+    }
+
     registerTransformations() {
         // any
         this.platform.serializer.deserializeRegistry.register(ReflectionKind.any, (_type, state) => {
