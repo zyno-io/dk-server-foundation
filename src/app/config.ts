@@ -44,8 +44,6 @@ export class BaseAppConfig {
 
     USE_REAL_IP_HEADER?: boolean;
 
-    MAIL_POSTMARK_SECRET?: string;
-
     REDIS_SENTINEL_HOST?: string;
     REDIS_SENTINEL_PORT?: number;
     REDIS_SENTINEL_NAME?: string;
