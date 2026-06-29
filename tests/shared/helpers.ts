@@ -7,7 +7,11 @@ import assert from 'node:assert/strict';
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function assertMatchObject(actual: any, expected: any, path = ''): void {
     if (typeof expected !== 'object' || expected === null) {
-        assert.strictEqual(actual, expected, path ? `at ${path}` : undefined);
+        if (path) {
+            assert.strictEqual(actual, expected, `at ${path}`);
+        } else {
+            assert.strictEqual(actual, expected);
+        }
         return;
     }
 
