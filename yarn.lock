@@ -2253,15 +2253,15 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@zyno-io/config@npm:^1.13.0":
-  version: 1.13.0
-  resolution: "@zyno-io/config@npm:1.13.0"
+"@zyno-io/config@npm:^1.14.0":
+  version: 1.14.0
+  resolution: "@zyno-io/config@npm:1.14.0"
   dependencies:
     commander: "npm:^15.0.0"
     dotenv: "npm:^17.4.2"
   bin:
     config-cli: dist/cli.js
-  checksum: 10c0/6cd92db34dbe9a37a6b88e60a4acac4a9da20b4945bfe0e47d0ec885296d12de5df3486338f794704af0546269b808c72463bec0c99aa6170351a475021f61e4
+  checksum: 10c0/aecb1a264ef6a5a51d05441f86a3dcb430342b14a60c5b07e684e428516a71ca73b387f69709de34ff81a0116d29050527966b21d490a09bc70831788fc967f0
   languageName: node
   linkType: hard
 
@@ -2318,7 +2318,7 @@ __metadata:
     "@types/lodash": "npm:^4.17.24"
     "@types/node": "npm:^26.0.1"
     "@types/nodemailer": "npm:^8"
-    "@zyno-io/config": "npm:^1.13.0"
+    "@zyno-io/config": "npm:^1.14.0"
     bcrypt: "npm:^6.0.0"
     bullmq: "npm:^5.79.2"
     date-fns: "npm:^4.4.0"
