@@ -141,6 +141,7 @@ describe('migrate:create integration', () => {
                 if (dialect === 'mysql') {
                     assert.equal(activeCol.type, 'tinyint');
                     assert.equal(activeCol.size, 1);
+                    assert.equal(activeCol.unsigned, true);
                 } else {
                     assert.equal(activeCol.type, 'boolean');
                 }

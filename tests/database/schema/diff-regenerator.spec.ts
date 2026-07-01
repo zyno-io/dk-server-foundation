@@ -51,7 +51,8 @@ describe('generateBuilderMigrationFromDiff', () => {
             name: 'orgs',
             columns: [
                 col({ name: 'id', type: 'bigint', unsigned: true, autoIncrement: true, isPrimaryKey: true }),
-                col({ name: 'name', type: 'varchar', size: 100 })
+                col({ name: 'name', type: 'varchar', size: 100 }),
+                col({ name: 'active', type: 'tinyint', size: 1, unsigned: true })
             ],
             indexes: [],
             foreignKeys: []
@@ -61,6 +62,8 @@ describe('generateBuilderMigrationFromDiff', () => {
         assert.match(src, /await db\.schema\.create\('orgs', t => \{/);
         assert.match(src, /t\.bigInteger\('id'\)\.unsigned\(\)\.autoIncrement\(\)\.primary\(\);/);
         assert.match(src, /t\.string\('name', 100\);/);
+        assert.match(src, /t\.boolean\('active'\);/);
+        assert.doesNotMatch(src, /t\.boolean\('active'\)\.unsigned\(\);/);
     });
 
     it('alter — add / drop / rename columns', () => {

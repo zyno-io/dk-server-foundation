@@ -158,6 +158,8 @@ export class MySQLGrammar extends Grammar {
                 return 'TINYINT(1)';
             case 'date':
                 return 'DATE';
+            case 'time':
+                return 'TIME';
             case 'datetime':
                 return 'DATETIME';
             case 'timestamp':

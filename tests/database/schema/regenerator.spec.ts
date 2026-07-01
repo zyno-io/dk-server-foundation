@@ -3,9 +3,10 @@ import { describe, it } from 'node:test';
 
 import { generateBuilderMigrationFile } from '../../../src/database/migration/create/builder-regenerator';
 import { TableSchema } from '../../../src/database/migration/create/schema-model';
+import { defaultBlueprintIdentifierName, defaultEntityIndexName } from '../../../src/database/schema/identifiers';
 
 describe('builder regenerator', () => {
-    it('renders a single table with id, string, boolean, dateTime', () => {
+    it('renders a single table with id, string, boolean, time, dateTime', () => {
         const tables: TableSchema[] = [
             {
                 name: 'users',
@@ -40,6 +41,15 @@ describe('builder regenerator', () => {
                         isPrimaryKey: false,
                         defaultExpression: 'CURRENT_TIMESTAMP',
                         ordinalPosition: 4
+                    },
+                    {
+                        name: 'closeoutTime',
+                        type: 'time',
+                        unsigned: false,
+                        nullable: true,
+                        autoIncrement: false,
+                        isPrimaryKey: false,
+                        ordinalPosition: 5
                     }
                 ],
                 indexes: [],
@@ -56,6 +66,7 @@ describe('builder regenerator', () => {
         assert.match(src, /t\.string\('email', 255\);/);
         assert.match(src, /t\.boolean\('active'\);/);
         assert.match(src, /t\.dateTime\('createdAt'\)\.defaultRaw\('CURRENT_TIMESTAMP'\);/);
+        assert.match(src, /t\.time\('closeoutTime'\)\.nullable\(\);/);
     });
 
     it('renders nullable, default literal, ON UPDATE', () => {
@@ -217,6 +228,61 @@ describe('builder regenerator', () => {
         ];
         const src = generateBuilderMigrationFile(tables);
         assert.match(src, /t\.index\('sku', 'idx_legacy_sku'\);/);
+    });
+
+    it('renders shortened entity-generated index names explicitly', () => {
+        const tableName = 'sales_predefinedDiscountTypes_products';
+        const columnName = 'predefinedDiscountTypeId';
+        const indexName = defaultEntityIndexName(tableName, [columnName], 'mysql');
+        const tables: TableSchema[] = [
+            {
+                name: tableName,
+                columns: [
+                    {
+                        name: columnName,
+                        type: 'int',
+                        unsigned: true,
+                        nullable: false,
+                        autoIncrement: false,
+                        isPrimaryKey: false,
+                        ordinalPosition: 1
+                    }
+                ],
+                indexes: [{ name: indexName, columns: [columnName], unique: false, spatial: false }],
+                foreignKeys: []
+            }
+        ];
+        const src = generateBuilderMigrationFile(tables, 'mysql');
+
+        assert.match(src, new RegExp(`t\\.index\\('${columnName}', '${indexName}'\\);`));
+    });
+
+    it('suppresses shortened builder-generated index names', () => {
+        const tableName = 'sales_predefinedDiscountTypes_products';
+        const columnName = 'predefinedDiscountTypeId';
+        const indexName = defaultBlueprintIdentifierName(tableName, [columnName], 'index', 'mysql');
+        const tables: TableSchema[] = [
+            {
+                name: tableName,
+                columns: [
+                    {
+                        name: columnName,
+                        type: 'int',
+                        unsigned: true,
+                        nullable: false,
+                        autoIncrement: false,
+                        isPrimaryKey: false,
+                        ordinalPosition: 1
+                    }
+                ],
+                indexes: [{ name: indexName, columns: [columnName], unique: false, spatial: false }],
+                foreignKeys: []
+            }
+        ];
+        const src = generateBuilderMigrationFile(tables, 'mysql');
+
+        assert.match(src, new RegExp(`t\\.index\\('${columnName}'\\);`));
+        assert.doesNotMatch(src, new RegExp(indexName));
     });
 
     it('renders POINT and SPATIAL index', () => {

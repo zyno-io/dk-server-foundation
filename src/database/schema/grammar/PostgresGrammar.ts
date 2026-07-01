@@ -202,6 +202,8 @@ export class PostgresGrammar extends Grammar {
                 return 'BOOLEAN';
             case 'date':
                 return 'DATE';
+            case 'time':
+                return 'TIME';
             case 'timestamp':
                 return 'TIMESTAMP';
             case 'timestamptz':

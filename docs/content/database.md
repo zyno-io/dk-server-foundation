@@ -403,9 +403,10 @@ export default createMigration(async db => {
 | `mediumText(name)`                             | `MEDIUMTEXT`                                          | `TEXT`                                                   |
 | `longText(name)`                               | `LONGTEXT`                                            | `TEXT`                                                   |
 | `tinyint`, `smallint`, `integer`, `bigInteger` | `TINYINT`, `SMALLINT`, `INT`, `BIGINT`                | `SMALLINT`, `INTEGER`, `BIGINT` (`tinyint` → `SMALLINT`) |
-| `boolean(name)`                                | `TINYINT(1)`                                          | `BOOLEAN`                                                |
+| `boolean(name)`                                | `TINYINT(1) UNSIGNED`                                 | `BOOLEAN`                                                |
 | `float`, `double`, `decimal(name, p?, s?)`     | `FLOAT`, `DOUBLE`, `DECIMAL(p,s)`                     | `REAL`, `DOUBLE PRECISION`, `NUMERIC(p,s)`               |
 | `date(name)`                                   | `DATE`                                                | `DATE`                                                   |
+| `time(name)`                                   | `TIME`                                                | `TIME`                                                   |
 | `dateTime(name)`                               | `DATETIME`                                            | `TIMESTAMP`                                              |
 | `timestamp(name)`                              | `TIMESTAMP`                                           | `TIMESTAMP`                                              |
 | `timestamptz(name)`                            | `TIMESTAMP`                                           | `TIMESTAMPTZ`                                            |
@@ -425,6 +426,8 @@ export default createMigration(async db => {
 ### Table-level
 
 `.timestamps()` (createdAt + updatedAt with `CURRENT_TIMESTAMP`), `.primary([cols])` (composite PK), `.index(cols, name?)`, `.unique(cols, name?)`, `.spatialIndex(cols, name?)` (MySQL POINT), `.foreign(cols, name?).references(...).on(...)`.
+
+Generated index and foreign-key names are shortened with a stable hash when they exceed the active dialect's identifier limit (64 for MySQL, 63 for Postgres). Explicit names passed to `.index(...)`, `.unique(...)`, `.spatialIndex(...)`, or `.foreign(...)` are emitted as provided.
 
 ### Schema operations
 

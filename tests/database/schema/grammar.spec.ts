@@ -40,9 +40,9 @@ describe('MySQLGrammar', () => {
             assert.match(sql, /PRIMARY KEY \(`id`\)/);
         });
 
-        it('renders TINYINT(1) for boolean', () => {
-            const sql = g.createTable(baseTable('t', [baseCol({ name: 'active', type: 'boolean' })]));
-            assert.match(sql, /`active` TINYINT\(1\) NOT NULL/);
+        it('renders TINYINT(1) UNSIGNED for boolean', () => {
+            const sql = g.createTable(baseTable('t', [baseCol({ name: 'active', type: 'boolean', unsigned: true })]));
+            assert.match(sql, /`active` TINYINT\(1\) UNSIGNED NOT NULL/);
         });
 
         it('renders DEFAULT literal and DEFAULT expression', () => {
@@ -69,6 +69,11 @@ describe('MySQLGrammar', () => {
         it('renders POINT', () => {
             const sql = g.createTable(baseTable('t', [baseCol({ name: 'loc', type: 'point' })]));
             assert.match(sql, /`loc` POINT NOT NULL/);
+        });
+
+        it('renders TIME', () => {
+            const sql = g.createTable(baseTable('t', [baseCol({ name: 'closeoutTime', type: 'time', nullable: true })]));
+            assert.match(sql, /`closeoutTime` TIME/);
         });
 
         it('emits composite PK', () => {
@@ -200,6 +205,11 @@ describe('PostgresGrammar', () => {
         it('renders TIMESTAMPTZ', () => {
             const sql = g.createTable(baseTable('t', [baseCol({ name: 'at', type: 'timestamptz' })]));
             assert.match(sql, /"at" TIMESTAMPTZ NOT NULL/);
+        });
+
+        it('renders TIME', () => {
+            const sql = g.createTable(baseTable('t', [baseCol({ name: 'closeoutTime', type: 'time', nullable: true })]));
+            assert.match(sql, /"closeoutTime" TIME/);
         });
 
         it('renders JSONB', () => {

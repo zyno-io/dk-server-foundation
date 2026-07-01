@@ -14,6 +14,7 @@ import {
 } from '@deepkit/type';
 
 import { BaseDatabase } from '../../common';
+import { defaultEntityForeignKeyName, defaultEntityIndexName } from '../../schema/identifiers';
 import { ColumnSchema, DatabaseSchema, Dialect, IndexSchema, ForeignKeySchema, INTERNAL_TABLES, TableSchema } from './schema-model';
 
 export function readEntitiesSchema(db: BaseDatabase, dialect: Dialect): DatabaseSchema {
@@ -90,7 +91,7 @@ function readTableSchema(reflection: ReflectionClass<unknown>, tableName: string
         // Skip indexes that reference columns we couldn't resolve
         if (idx.names.some(n => skippedColumns.has(n))) continue;
 
-        const name = idx.options.name || `idx_${tableName}_${idx.names.join('_')}`;
+        const name = idx.options.name || defaultEntityIndexName(tableName, idx.names, dialect);
         if (seen.has(name)) continue;
         seen.add(name);
 
@@ -200,7 +201,7 @@ function readReferenceColumn(
     };
 }
 
-function readForeignKey(prop: ReflectionProperty, tableName: string, _dialect: Dialect, _db: BaseDatabase): ForeignKeySchema | null {
+function readForeignKey(prop: ReflectionProperty, tableName: string, dialect: Dialect, _db: BaseDatabase): ForeignKeySchema | null {
     const refClass = prop.getResolvedReflectionClass();
     const refTableName = refClass.getCollectionName() || refClass.name || '';
 
@@ -221,7 +222,7 @@ function readForeignKey(prop: ReflectionProperty, tableName: string, _dialect: D
     const onUpdate: string = (ref as Record<string, unknown>)?.onUpdate ? String((ref as Record<string, unknown>).onUpdate) : 'CASCADE';
 
     return {
-        name: `fk_${tableName}_${prop.name}`,
+        name: defaultEntityForeignKeyName(tableName, [prop.name], dialect),
         columns: [prop.name],
         referencedTable: refTableName,
         referencedColumns: [refPk.name],
@@ -518,9 +519,7 @@ function resolvePrimitiveType(type: Type, dialect: Dialect, columnName?: string)
             return { type: 'int' };
 
         case ReflectionKind.boolean:
-            // Canonical boolean storage on MySQL is TINYINT(1) (signed) — MySQL drops the (1) display
-            // width if the column is UNSIGNED, so an unsigned boolean would not round-trip.
-            return dialect === 'mysql' ? { type: 'tinyint', size: 1 } : { type: 'boolean' };
+            return dialect === 'mysql' ? { type: 'tinyint', size: 1, unsigned: true } : { type: 'boolean' };
 
         case ReflectionKind.bigint:
             return { type: 'bigint' };
@@ -545,7 +544,7 @@ function resolvePrimitiveType(type: Type, dialect: Dialect, columnName?: string)
             if (typeof literal === 'string') return { type: 'varchar', size: 255 };
             if (typeof literal === 'number') return { type: 'int' };
             if (typeof literal === 'boolean') {
-                return dialect === 'mysql' ? { type: 'tinyint', size: 1 } : { type: 'boolean' };
+                return dialect === 'mysql' ? { type: 'tinyint', size: 1, unsigned: true } : { type: 'boolean' };
             }
             return null;
         }

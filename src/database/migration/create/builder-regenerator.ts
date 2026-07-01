@@ -1,11 +1,12 @@
+import { defaultBlueprintIdentifierName } from '../../schema/identifiers';
 import { ColumnSchema, Dialect, ForeignKeySchema, IndexSchema, SchemaDiff, TableDiff, TableSchema } from './schema-model';
 
 const FILE_HEADER = `import { createMigration } from '@zyno-io/dk-server-foundation';\n\nexport default createMigration(async db => {\n`;
 const FILE_FOOTER = `\n});\n`;
 
 /** Render a TypeScript migration file that uses db.schema builder to recreate the given tables. */
-export function generateBuilderMigrationFile(tables: TableSchema[]): string {
-    const blocks = tables.map(t => renderTableBlock(t));
+export function generateBuilderMigrationFile(tables: TableSchema[], dialect: Dialect = 'mysql'): string {
+    const blocks = tables.map(t => renderTableBlock(t, dialect));
     return `${FILE_HEADER}${blocks.join('\n\n')}${FILE_FOOTER}`;
 }
 
@@ -24,7 +25,7 @@ export function generateBuilderMigrationFromDiff(diff: SchemaDiff): string {
     }
 
     for (const table of diff.addedTables) {
-        blocks.push(renderTableBlock(table));
+        blocks.push(renderTableBlock(table, diff.dialect));
     }
 
     for (const tableDiff of diff.modifiedTables) {
@@ -93,8 +94,8 @@ function renderAlterBlock(td: TableDiff, dialect: Dialect): string {
         innerLines.push(`        t.primary([${td.newPrimaryKey.map(quoteStr).join(', ')}]);`);
     }
 
-    for (const idx of td.addedIndexes) innerLines.push(`        ${renderIndexLine(idx, stubTable)}`);
-    for (const fk of td.addedForeignKeys) innerLines.push(`        ${renderForeignKeyLine(fk, stubTable)}`);
+    for (const idx of td.addedIndexes) innerLines.push(`        ${renderIndexLine(idx, stubTable, dialect)}`);
+    for (const fk of td.addedForeignKeys) innerLines.push(`        ${renderForeignKeyLine(fk, stubTable, dialect)}`);
 
     if (innerLines.length === 0 && preLines.length === 0 && postLines.length === 0) return '';
 
@@ -107,7 +108,7 @@ function renderAlterBlock(td: TableDiff, dialect: Dialect): string {
     return parts.join('\n\n');
 }
 
-function renderTableBlock(table: TableSchema): string {
+function renderTableBlock(table: TableSchema, dialect: Dialect): string {
     const lines: string[] = [];
 
     for (const col of table.columns) {
@@ -121,11 +122,11 @@ function renderTableBlock(table: TableSchema): string {
     }
 
     for (const idx of table.indexes) {
-        lines.push(`        ${renderIndexLine(idx, table)}`);
+        lines.push(`        ${renderIndexLine(idx, table, dialect)}`);
     }
 
     for (const fk of table.foreignKeys) {
-        lines.push(`        ${renderForeignKeyLine(fk, table)}`);
+        lines.push(`        ${renderForeignKeyLine(fk, table, dialect)}`);
     }
 
     return `    await db.schema.create(${quoteStr(table.name)}, t => {\n${lines.join('\n')}\n    });`;
@@ -148,7 +149,7 @@ function renderColumnLine(col: ColumnSchema, table: TableSchema): string {
     let line = `t.${pickBuilderMethod(col)}`;
 
     // Modifier order chosen to read naturally
-    if (col.unsigned) line += '.unsigned()';
+    if (col.unsigned && !isBuilderBoolean(col)) line += '.unsigned()';
     if (col.nullable) line += '.nullable()';
     if (col.autoIncrement) line += '.autoIncrement()';
 
@@ -186,7 +187,7 @@ function pickBuilderMethod(col: ColumnSchema): string {
         case 'longtext':
             return `longText(${n})`;
         case 'tinyint':
-            // tinyint(1) is the canonical MySQL boolean storage; map back to .boolean()
+            // tinyint(1) is MySQL boolean storage; map back to .boolean()
             if (col.size === 1) return `boolean(${n})`;
             return `tinyint(${n})`;
         case 'smallint':
@@ -215,6 +216,8 @@ function pickBuilderMethod(col: ColumnSchema): string {
         }
         case 'date':
             return `date(${n})`;
+        case 'time':
+            return `time(${n})`;
         case 'datetime':
         case 'timestamp':
             return `dateTime(${n})`;
@@ -247,11 +250,15 @@ function pickBuilderMethod(col: ColumnSchema): string {
     }
 }
 
-function renderIndexLine(idx: IndexSchema, table: TableSchema): string {
+function isBuilderBoolean(col: ColumnSchema): boolean {
+    return col.type === 'boolean' || (col.type === 'tinyint' && col.size === 1);
+}
+
+function renderIndexLine(idx: IndexSchema, table: TableSchema, dialect: Dialect): string {
     const colsArg = renderColumnsArg(idx.columns);
 
     const suffix = idx.spatial ? 'spatial' : idx.unique ? 'unique' : 'index';
-    const expectedName = `${table.name}_${idx.columns.join('_')}_${suffix}`;
+    const expectedName = defaultBlueprintIdentifierName(table.name, idx.columns, suffix, dialect);
     const nameArg = idx.name === expectedName ? '' : `, ${quoteStr(idx.name)}`;
 
     if (idx.spatial) return `t.spatialIndex(${colsArg}${nameArg});`;
@@ -259,9 +266,9 @@ function renderIndexLine(idx: IndexSchema, table: TableSchema): string {
     return `t.index(${colsArg}${nameArg});`;
 }
 
-function renderForeignKeyLine(fk: ForeignKeySchema, table: TableSchema): string {
+function renderForeignKeyLine(fk: ForeignKeySchema, table: TableSchema, dialect: Dialect): string {
     const colsArg = renderColumnsArg(fk.columns);
-    const expectedName = `${table.name}_${fk.columns.join('_')}_foreign`;
+    const expectedName = defaultBlueprintIdentifierName(table.name, fk.columns, 'foreign', dialect);
     const nameArg = fk.name === expectedName ? '' : `, ${quoteStr(fk.name)}`;
 
     let line = `t.foreign(${colsArg}${nameArg})`;

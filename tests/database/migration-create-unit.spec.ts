@@ -188,6 +188,64 @@ describe('comparator', () => {
             assert.equal(diff.modifiedTables[0].modifiedColumns[0].typeChanged, true);
         });
 
+        it('should not detect drift for legacy signed MySQL boolean columns', async () => {
+            const entity = schema(
+                table('flags', [
+                    col({ name: 'id', type: 'int', isPrimaryKey: true, ordinalPosition: 1 }),
+                    col({ name: 'active', type: 'tinyint', size: 1, unsigned: true, ordinalPosition: 2 })
+                ])
+            );
+            const db = schema(
+                table('flags', [
+                    col({ name: 'id', type: 'int', isPrimaryKey: true, ordinalPosition: 1 }),
+                    col({ name: 'active', type: 'tinyint', size: 1, unsigned: false, ordinalPosition: 2 })
+                ])
+            );
+
+            const diff = await compareSchemas(entity, db, 'mysql', false);
+
+            assert.equal(diff.modifiedTables.length, 0);
+        });
+
+        it('should not detect drift for MySQL boolean columns without display width', async () => {
+            const entity = schema(
+                table('flags', [
+                    col({ name: 'id', type: 'int', isPrimaryKey: true, ordinalPosition: 1 }),
+                    col({ name: 'active', type: 'tinyint', size: 1, unsigned: true, ordinalPosition: 2 })
+                ])
+            );
+            const db = schema(
+                table('flags', [
+                    col({ name: 'id', type: 'int', isPrimaryKey: true, ordinalPosition: 1 }),
+                    col({ name: 'active', type: 'tinyint', size: undefined, unsigned: true, ordinalPosition: 2 })
+                ])
+            );
+
+            const diff = await compareSchemas(entity, db, 'mysql', false);
+
+            assert.equal(diff.modifiedTables.length, 0);
+        });
+
+        it('should still detect unsigned changes for non-boolean tinyint columns', async () => {
+            const entity = schema(
+                table('metrics', [
+                    col({ name: 'id', type: 'int', isPrimaryKey: true, ordinalPosition: 1 }),
+                    col({ name: 'attempt', type: 'tinyint', size: undefined, unsigned: true, ordinalPosition: 2 })
+                ])
+            );
+            const db = schema(
+                table('metrics', [
+                    col({ name: 'id', type: 'int', isPrimaryKey: true, ordinalPosition: 1 }),
+                    col({ name: 'attempt', type: 'tinyint', size: undefined, unsigned: false, ordinalPosition: 2 })
+                ])
+            );
+
+            const diff = await compareSchemas(entity, db, 'mysql', false);
+
+            assert.equal(diff.modifiedTables.length, 1);
+            assert.equal(diff.modifiedTables[0].modifiedColumns[0].typeChanged, true);
+        });
+
         it('should detect onUpdateExpression changes', async () => {
             const entity = schema(
                 table('users', [
@@ -766,12 +824,12 @@ describe('ddl-generator', () => {
             assert.ok(stmts.some(s => s.includes('CREATE UNIQUE INDEX') && s.includes('`idx_email`')));
         });
 
-        it('should generate boolean column as TINYINT(1)', async () => {
+        it('should generate boolean column as TINYINT(1) UNSIGNED', async () => {
             const diff = await compareSchemas(
                 schema(
                     table('flags', [
                         col({ name: 'id', type: 'int', isPrimaryKey: true, ordinalPosition: 1 }),
-                        col({ name: 'active', type: 'tinyint', size: 1, ordinalPosition: 2 })
+                        col({ name: 'active', type: 'tinyint', size: 1, unsigned: true, ordinalPosition: 2 })
                     ])
                 ),
                 schema(),
@@ -782,7 +840,7 @@ describe('ddl-generator', () => {
             const stmts = ddl(diff);
             const create = stmts[0];
 
-            assert.ok(create.includes('TINYINT(1)'));
+            assert.ok(create.includes('TINYINT(1) UNSIGNED'));
         });
 
         it('should generate MODIFY COLUMN for reorder-only columns', async () => {
@@ -4079,7 +4137,7 @@ describe('entity field initializer defaults', () => {
             const entity = schema(
                 table('flags', [
                     col({ name: 'id', type: 'int', isPrimaryKey: true, autoIncrement: true, ordinalPosition: 1 }),
-                    col({ name: 'active', type: 'tinyint', size: 1, ordinalPosition: 2, defaultValue: '0' })
+                    col({ name: 'active', type: 'tinyint', size: 1, unsigned: true, ordinalPosition: 2, defaultValue: '0' })
                 ])
             );
             const db = schema();
@@ -4159,13 +4217,13 @@ describe('entity field initializer defaults', () => {
             const entity = schema(
                 table('flags', [
                     col({ name: 'id', type: 'int', isPrimaryKey: true, ordinalPosition: 1 }),
-                    col({ name: 'active', type: 'tinyint', size: 1, ordinalPosition: 2, defaultValue: '0' })
+                    col({ name: 'active', type: 'tinyint', size: 1, unsigned: true, ordinalPosition: 2, defaultValue: '0' })
                 ])
             );
             const db = schema(
                 table('flags', [
                     col({ name: 'id', type: 'int', isPrimaryKey: true, ordinalPosition: 1 }),
-                    col({ name: 'active', type: 'tinyint', size: 1, ordinalPosition: 2, defaultValue: '0' })
+                    col({ name: 'active', type: 'tinyint', size: 1, unsigned: false, ordinalPosition: 2, defaultValue: '0' })
                 ])
             );
 

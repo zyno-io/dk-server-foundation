@@ -46,7 +46,7 @@ export class MigrationResetCommand {
             return;
         }
 
-        const migrationContent = generateBuilderMigrationFile(tables);
+        const migrationContent = generateBuilderMigrationFile(tables, dialect);
         const migrationPath = path.join(this.migrationsDir, '00000000_000000_base.ts');
 
         writeFileSync(migrationPath, migrationContent, 'utf8');

@@ -229,7 +229,11 @@ function normalizeTypeAlias(type: string): string {
 }
 
 function typesMatch(a: ColumnSchema, b: ColumnSchema): boolean {
-    if (normalizeTypeAlias(a.type) !== normalizeTypeAlias(b.type)) return false;
+    const aType = normalizeTypeAlias(a.type);
+    const bType = normalizeTypeAlias(b.type);
+    if (aType !== bType) return false;
+
+    if (booleanTinyintTypesMatch(a, b, aType, bType)) return true;
 
     // Compare size when relevant
     if (a.size !== undefined || b.size !== undefined) {
@@ -257,6 +261,24 @@ function typesMatch(a: ColumnSchema, b: ColumnSchema): boolean {
     }
 
     return true;
+}
+
+function booleanTinyintTypesMatch(a: ColumnSchema, b: ColumnSchema, aType: string, bType: string): boolean {
+    if (aType !== 'tinyint' || bType !== 'tinyint') return false;
+
+    return (
+        (isCanonicalBooleanTinyint(a) && isCompatibleBooleanTinyintStorage(b)) ||
+        (isCanonicalBooleanTinyint(b) && isCompatibleBooleanTinyintStorage(a))
+    );
+}
+
+function isCanonicalBooleanTinyint(col: ColumnSchema): boolean {
+    return col.size === 1 && col.unsigned;
+}
+
+function isCompatibleBooleanTinyintStorage(col: ColumnSchema): boolean {
+    if (col.size === 1) return true;
+    return col.size === undefined && col.unsigned;
 }
 
 function normalizeDefaultExpression(expr: string): string {

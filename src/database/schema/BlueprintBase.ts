@@ -1,6 +1,7 @@
 import { ColumnSchema, ForeignKeySchema, IndexSchema } from '../migration/create/schema-model';
 import { ColumnDefinition, ForeignKeyBuilder } from './ColumnDefinition';
 import { Grammar } from './grammar/Grammar';
+import { defaultBlueprintIdentifierName } from './identifiers';
 
 /**
  * Shared base for `Blueprint` (create-table) and `AlterBlueprint` (alter-table).
@@ -164,7 +165,7 @@ export abstract class BlueprintBase {
         return this.addColumnImpl({
             name,
             type: 'boolean',
-            unsigned: false,
+            unsigned: this.grammar.dialect === 'mysql',
             nullable: false,
             autoIncrement: false,
             isPrimaryKey: false,
@@ -214,6 +215,18 @@ export abstract class BlueprintBase {
         return this.addColumnImpl({
             name,
             type: 'date',
+            unsigned: false,
+            nullable: false,
+            autoIncrement: false,
+            isPrimaryKey: false,
+            ordinalPosition: 0
+        });
+    }
+
+    time(name: string): ColumnDefinition {
+        return this.addColumnImpl({
+            name,
+            type: 'time',
             unsigned: false,
             nullable: false,
             autoIncrement: false,
@@ -420,6 +433,6 @@ export abstract class BlueprintBase {
     abstract primary(columns: string[]): this;
 
     protected defaultIndexName(columns: string[], suffix: string): string {
-        return `${this.tableName}_${columns.join('_')}_${suffix}`;
+        return defaultBlueprintIdentifierName(this.tableName, columns, suffix, this.grammar.dialect);
     }
 }
